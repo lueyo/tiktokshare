@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Convertidor de enlaces TikTok</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2rem;
+            background-color: #f9f9f9;
+            color: #333;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 0.6rem;
+            font-size: 1rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            margin-bottom: 1rem;
+        }
+        button {
+            padding: 0.6rem 1.2rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 0.5rem;
+            transition: background-color 0.3s ease;
+        }
+        button.convert-btn {
+            background-color: #25f4ee;
+            color: #000;
+        }
+        button.convert-btn:hover {
+            background-color: #1ac9d8;
+        }
+        button.copy-btn {
+            background-color: #4caf50;
+            color: white;
+        }
+        button.copy-btn:hover {
+            background-color: #3e8e41;
+        }
+        .result {
+            margin-top: 1rem;
+            padding: 0.6rem;
+            background-color: #e0f7fa;
+            border-radius: 4px;
+            word-break: break-all;
+            font-weight: bold;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Convertidor de enlaces TikTok</h1>
+        <input type="text" id="inputUrl" placeholder="Introduce el enlace de TikTok aquí" />
+        <div>
+            <button class="convert-btn" id="convertBtn">Convertir</button>
+            <button class="copy-btn hidden" id="copyBtn">Copiar enlace</button>
+        </div>
+        <div id="result" class="result hidden"></div>
+    </div>
+
+    <script>
+        const inputUrl = document.getElementById('inputUrl');
+        const convertBtn = document.getElementById('convertBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const resultDiv = document.getElementById('result');
+
+        function convertTikTokUrl(url) {
+            try {
+                const parsedUrl = new URL(url.trim());
+                // Only process if hostname is vm.tiktok.com or www.tiktok.com
+                if (parsedUrl.hostname === 'vm.tiktok.com') {
+                    // The pathname is like /ZNd5tth8o/
+                    // We want to keep the pathname and append to https://tk.lueyo.es
+                    let path = parsedUrl.pathname;
+                    if (path.endsWith('/')) {
+                        path = path.slice(0, -1);
+                    }
+                    return 'https://tk.lueyo.es' + path;
+                } else if (parsedUrl.hostname === 'www.tiktok.com') {
+                    // The pathname is like /@gustavorosaliabasurtop/video/7515861153130499350
+                    let path = parsedUrl.pathname;
+                    if (path.endsWith('/')) {
+                        path = path.slice(0, -1);
+                    }
+                    return 'https://tk.lueyo.es' + path;
+                } else {
+                    return null;
+                }
+            } catch (e) {
+                return null;
+            }
+        }
+
+        convertBtn.addEventListener('click', () => {
+            const input = inputUrl.value;
+            const converted = convertTikTokUrl(input);
+            if (converted) {
+                resultDiv.textContent = converted;
+                resultDiv.classList.remove('hidden');
+                copyBtn.classList.remove('hidden');
+            } else {
+                resultDiv.textContent = 'Por favor, introduce un enlace válido de TikTok.';
+                resultDiv.classList.remove('hidden');
+                copyBtn.classList.add('hidden');
+            }
+        });
+
+        copyBtn.addEventListener('click', () => {
+            const text = resultDiv.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                copyBtn.textContent = '¡Copiado!';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copiar enlace';
+                }, 2000);
+            }).catch(() => {
+                alert('No se pudo copiar el enlace. Por favor, cópialo manualmente.');
+            });
+        });
+    </script>
+</body>
+</html>

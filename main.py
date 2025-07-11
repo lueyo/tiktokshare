@@ -9,6 +9,7 @@ app = FastAPI()
 VIDEO_DIR = "./videos"
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
+
 def get_tiktok_url(tiktok_id: str) -> str:
     # Check if the id is short form (e.g. ZNd5tth8o)
     if re.fullmatch(r"[A-Za-z0-9]+", tiktok_id):
@@ -19,7 +20,19 @@ def get_tiktok_url(tiktok_id: str) -> str:
     else:
         return None
 
-@app.get("/v/{tiktok_id:path}")
+
+@app.get("/")
+async def form():
+
+    return FileResponse("web/index.html")
+
+
+@app.get("/ping")
+async def ping():
+    return {"message": "pong"}  # Return a simple pong response
+
+
+@app.get("/{tiktok_id:path}")
 async def download_tiktok_video(tiktok_id: str):
     url = get_tiktok_url(tiktok_id)
     if not url:
@@ -40,7 +53,9 @@ async def download_tiktok_video(tiktok_id: str):
             if not os.path.exists(filename):
                 raise HTTPException(status_code=500, detail="Video download failed")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error downloading video: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error downloading video: {str(e)}"
+        )
 
     # Serve the video with media_type video/mp4 so it can be played in browser
     return FileResponse(filename, media_type="video/mp4")
