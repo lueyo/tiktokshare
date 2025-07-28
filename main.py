@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, CORSMiddleware
 from fastapi.responses import FileResponse
 import os
 import re
