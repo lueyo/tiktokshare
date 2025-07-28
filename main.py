@@ -8,6 +8,14 @@ import time
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 VIDEO_DIR = "./videos"
 VIDEO_DIR_T = os.path.join(VIDEO_DIR, "t")
 VIDEO_DIR_X = os.path.join(VIDEO_DIR, "x")
