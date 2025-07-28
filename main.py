@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, CORSMiddleware
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import os
 import re
 import yt_dlp
