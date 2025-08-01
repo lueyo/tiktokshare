@@ -1,21 +1,15 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
 import os
 import re
 import yt_dlp
 import asyncio
 import time
+from fastapi.responses import FileResponse
+from fastapi import HTTPException
+from services.InstagramService import InstagramService
 
 app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 VIDEO_DIR = "./videos"
 VIDEO_DIR_T = os.path.join(VIDEO_DIR, "t")
@@ -179,9 +173,18 @@ async def download_instagram_video_by_id(instagram_id: str):
             if not os.path.exists(filename):
                 raise HTTPException(status_code=500, detail="Video download failed")
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error downloading video: {str(e)}"
-        )
+        # Fallback to InstagramService download with requests
+        try:
+            filename = os.path.join(VIDEO_DIR_I, f"{instagram_id}.mp4")
+            InstagramService.download_video_with_requests(url, filename)
+        except Exception as fallback_e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error downloading video: {str(e)}; Fallback error: {str(fallback_e)}",
+            )
+
+        if not os.path.exists(filename):
+            raise HTTPException(status_code=500, detail="Video download failed in fallback")
 
     return FileResponse(filename, media_type="video/mp4")
 
@@ -196,4 +199,3 @@ async def download_tiktok_video_t(tiktok_id: str):
 @app.get("/{tiktok_id:path}")
 async def download_tiktok_video(tiktok_id: str):
     return await download_tiktok_video_by_id(tiktok_id)
-
