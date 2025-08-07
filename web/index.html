@@ -84,7 +84,12 @@
 <body>
     <div class="container">
         <h1>Convertidor de enlaces a los de Lueyo</h1>
-        <input type="text" id="inputUrl" placeholder="Enlace de X, Instagram, Tiktok o Facebook" />
+        <div style="position: relative;">
+            <input type="text" id="inputUrl" placeholder="Enlace de X, Instagram, Tiktok o Facebook" />
+            <button id="clearInputBtn" title="Limpiar"
+                style="position: absolute; right: 8px; top: 35%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 1.2rem; color: #888; display: none;"
+                tabindex="-1">&#10006;</button>
+        </div>
         <div>
             <button class="convert-btn" id="convertBtn">Convertir</button>
             <button class="copy-btn hidden" id="copyBtn">Copiar enlace</button>
@@ -97,6 +102,7 @@
         const convertBtn = document.getElementById('convertBtn');
         const copyBtn = document.getElementById('copyBtn');
         const resultDiv = document.getElementById('result');
+        const clearInputBtn = document.getElementById('clearInputBtn');
 
         function convertUrl(url) {
             try {
@@ -199,6 +205,17 @@
             }).catch(() => {
                 alert('No se pudo copiar el enlace. Por favor, cópialo manualmente.');
             });
+        });
+
+        // Mostrar/ocultar el botón de limpiar según el contenido del input
+        inputUrl.addEventListener('input', () => {
+            clearInputBtn.style.display = inputUrl.value ? 'block' : 'none';
+        });
+        clearInputBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            inputUrl.value = '';
+            clearInputBtn.style.display = 'none';
+            inputUrl.focus();
         });
     </script>
 </body>

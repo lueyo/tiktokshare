@@ -1,12 +1,11 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 import os
 import re
 import yt_dlp
 import asyncio
 import time
 import requests
-from fastapi.responses import FileResponse
 from fastapi import HTTPException
 from services.InstagramService import InstagramService
 from services.FacebookService import FacebookService
@@ -63,7 +62,8 @@ def get_tiktok_url(tiktok_id: str) -> str:
 @app.get("/")
 async def form():
 
-    return FileResponse("web/index.html")
+    #return FileResponse("web/index.html")
+    return RedirectResponse(url="https://ttk.lueyo.es")
 
 
 @app.get("/ping")
