@@ -5,6 +5,7 @@ import re
 import yt_dlp
 import asyncio
 import time
+import requests
 from fastapi.responses import FileResponse
 from fastapi import HTTPException
 from services.InstagramService import InstagramService
@@ -15,17 +16,19 @@ VIDEO_DIR = "./videos"
 VIDEO_DIR_T = os.path.join(VIDEO_DIR, "t")
 VIDEO_DIR_X = os.path.join(VIDEO_DIR, "x")
 VIDEO_DIR_I = os.path.join(VIDEO_DIR, "i")
+VIDEO_DIR_F = os.path.join(VIDEO_DIR, "f")
 os.makedirs(VIDEO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR_T, exist_ok=True)
 os.makedirs(VIDEO_DIR_X, exist_ok=True)
 os.makedirs(VIDEO_DIR_I, exist_ok=True)
+os.makedirs(VIDEO_DIR_F, exist_ok=True)
 
 
 async def delete_old_videos():
     while True:
         now = time.time()
         # Check all four directories
-        for directory in [VIDEO_DIR_T, VIDEO_DIR_X, VIDEO_DIR_I]:
+        for directory in [VIDEO_DIR_T, VIDEO_DIR_X, VIDEO_DIR_I, VIDEO_DIR_F]:
             for filename in os.listdir(directory):
                 filepath = os.path.join(directory, filename)
                 if os.path.isfile(filepath):
@@ -39,9 +42,11 @@ async def delete_old_videos():
                             print(f"Error deleting file {filename}: {e}")
         await asyncio.sleep(300)  # Sleep for 5 minutes
 
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(delete_old_videos())
+
 
 def get_tiktok_url(tiktok_id: str) -> str:
     # Check if the id is short form (e.g. ZNd5tth8o)
@@ -63,7 +68,6 @@ async def form():
 @app.get("/ping")
 async def ping():
     return {"message": "pong"}  # Return a simple pong response
-
 
 
 async def download_tiktok_video_by_id(tiktok_id: str):
@@ -146,9 +150,66 @@ async def download_x_video(x_id: str):
     return FileResponse(filename, media_type="video/mp4")
 
 
+def get_facebook_url(facebook_id: str) -> str:
+    # Construct Facebook video URL from id
+    # Example: https://www.facebook.com/reel/765993538835063
+    return f"https://www.facebook.com/reel/{facebook_id}"
+
+
+async def download_facebook_video_by_id(facebook_id: str):
+    # Check if facebook_id matches the pattern like 1AZfMP4wBz (length and character types)
+    if re.fullmatch(r"[A-Za-z0-9]{10}", facebook_id):
+        # Make a request to get the 302 redirect location header
+        share_url = f"https://www.facebook.com/share/v/{facebook_id}/"
+        try:
+            response = requests.head(share_url, allow_redirects=False)
+            if response.status_code == 302:
+                location = response.headers.get("location")
+                if location:
+                    # Trim the location URL to remove query parameters
+                    trimmed_url = location.split("?")[0]
+                    url = trimmed_url
+                else:
+                    url = get_facebook_url(facebook_id)
+            else:
+                url = get_facebook_url(facebook_id)
+        except Exception:
+            url = get_facebook_url(facebook_id)
+    else:
+        url = get_facebook_url(facebook_id)
+
+    ydl_opts = {
+        "outtmpl": os.path.join(VIDEO_DIR_F, "%(id)s.%(ext)s"),
+        "quiet": True,
+        "no_warnings": True,
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(url, download=False)
+            video_id = info_dict.get("id")
+            ext = info_dict.get("ext")
+            filename = os.path.join(VIDEO_DIR_F, f"{video_id}.{ext}")
+
+            if os.path.exists(filename):
+                return FileResponse(filename, media_type="video/mp4")
+            #print(f"Downloading Facebook video: {url}")
+
+            ydl.extract_info(url, download=True)
+
+            if not os.path.exists(filename):
+                raise HTTPException(status_code=500, detail="Video download failed")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error downloading video: {str(e)}"
+        )
+
+    return FileResponse(filename, media_type="video/mp4")
+
 
 def get_instagram_url(instagram_id: str) -> str:
     return f"https://www.instagram.com/p/{instagram_id}/"
+
 
 async def download_instagram_video_by_id(instagram_id: str):
     url = get_instagram_url(instagram_id)
@@ -184,18 +245,29 @@ async def download_instagram_video_by_id(instagram_id: str):
             )
 
         if not os.path.exists(filename):
-            raise HTTPException(status_code=500, detail="Video download failed in fallback")
+            raise HTTPException(
+                status_code=500, detail="Video download failed in fallback"
+            )
 
     return FileResponse(filename, media_type="video/mp4")
+
 
 @app.get("/i/{instagram_id}")
 async def download_instagram_video(instagram_id: str):
     return await download_instagram_video_by_id(instagram_id)
 
+
 @app.get("/t/{tiktok_id:path}")
 async def download_tiktok_video_t(tiktok_id: str):
     return await download_tiktok_video_by_id(tiktok_id)
 
+@app.get("/f/{facebook_id}")
+async def download_facebook_video(facebook_id: str):
+    return await download_facebook_video_by_id(facebook_id)
+
+
 @app.get("/{tiktok_id:path}")
 async def download_tiktok_video(tiktok_id: str):
     return await download_tiktok_video_by_id(tiktok_id)
+
+

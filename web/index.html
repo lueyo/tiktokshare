@@ -84,7 +84,7 @@
 <body>
     <div class="container">
         <h1>Convertidor de enlaces a los de Lueyo</h1>
-        <input type="text" id="inputUrl" placeholder="Enlace de X, Instagram o Tiktok" />
+        <input type="text" id="inputUrl" placeholder="Enlace de X, Instagram, Tiktok o Facebook" />
         <div>
             <button class="convert-btn" id="convertBtn">Convertir</button>
             <button class="copy-btn hidden" id="copyBtn">Copiar enlace</button>
@@ -100,12 +100,33 @@
 
         function convertUrl(url) {
             try {
-                // Extract only the first URL if there is extra text after it
+                // Extraer solo la primera URL si hay texto extra
                 const urlMatch = url.trim().match(/https?:\/\/[^\s]+/);
                 if (!urlMatch) return null;
-                const extractedUrl = urlMatch[0];
+                let extractedUrl = urlMatch[0];
+                // Normalizar: quitar www. si está presente
+                extractedUrl = extractedUrl.replace('://www.', '://');
                 const parsedUrl = new URL(extractedUrl);
+                const path = parsedUrl.pathname;
 
+                // Facebook URL handling
+                if (parsedUrl.hostname === 'facebook.com') {
+                    // /videos/{id}
+                    let match = path.match(/\/videos\/(\d+)/);
+                    if (match) {
+                        return 'https://tk.lueyo.es/f/' + match[1];
+                    }
+                    // /share/{id}/
+                    match = path.match(/\/share\/([A-Za-z0-9]{10})/);
+                    if (match) {
+                        return 'https://tk.lueyo.es/f/' + match[1];
+                    }
+                    // /reel/{id}
+                    match = path.match(/\/reel\/(\d+)/);
+                    if (match) {
+                        return 'https://tk.lueyo.es/f/' + match[1];
+                    }
+                }
                 // TikTok URL handling
                 if (parsedUrl.hostname === 'vm.tiktok.com') {
                     let path = parsedUrl.pathname;
