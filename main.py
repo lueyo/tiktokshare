@@ -9,6 +9,7 @@ import requests
 from fastapi.responses import FileResponse
 from fastapi import HTTPException
 from services.InstagramService import InstagramService
+from services.FacebookService import FacebookService
 
 app = FastAPI()
 
@@ -193,16 +194,27 @@ async def download_facebook_video_by_id(facebook_id: str):
 
             if os.path.exists(filename):
                 return FileResponse(filename, media_type="video/mp4")
-            #print(f"Downloading Facebook video: {url}")
+            # print(f"Downloading Facebook video: {url}")
 
             ydl.extract_info(url, download=True)
 
             if not os.path.exists(filename):
                 raise HTTPException(status_code=500, detail="Video download failed")
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error downloading video: {str(e)}"
-        )
+        # Fallback a FacebookService si falla yt_dlp
+        try:
+            filename = os.path.join(VIDEO_DIR_F, f"{facebook_id}.mp4")
+            FacebookService.download_video_with_requests(url, filename)
+        except Exception as fallback_e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error descargando video: {str(e)}; Fallback error: {str(fallback_e)}",
+            )
+
+        if not os.path.exists(filename):
+            raise HTTPException(
+                status_code=500, detail="Video download failed in fallback"
+            )
 
     return FileResponse(filename, media_type="video/mp4")
 
@@ -261,6 +273,7 @@ async def download_instagram_video(instagram_id: str):
 async def download_tiktok_video_t(tiktok_id: str):
     return await download_tiktok_video_by_id(tiktok_id)
 
+
 @app.get("/f/{facebook_id}")
 async def download_facebook_video(facebook_id: str):
     return await download_facebook_video_by_id(facebook_id)
@@ -269,5 +282,3 @@ async def download_facebook_video(facebook_id: str):
 @app.get("/{tiktok_id:path}")
 async def download_tiktok_video(tiktok_id: str):
     return await download_tiktok_video_by_id(tiktok_id)
-
-
