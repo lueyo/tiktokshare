@@ -6,11 +6,18 @@ import yt_dlp
 import asyncio
 import time
 import requests
-from fastapi import HTTPException
 from services.InstagramService import InstagramService
 from services.FacebookService import FacebookService
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 VIDEO_DIR = "./videos"
 VIDEO_DIR_T = os.path.join(VIDEO_DIR, "t")
