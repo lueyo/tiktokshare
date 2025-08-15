@@ -6,6 +6,7 @@ import yt_dlp
 import asyncio
 import time
 import requests
+from urllib.parse import parse_qs, urlparse
 from services.InstagramService import InstagramService
 from services.FacebookService import FacebookService
 from fastapi.middleware.cors import CORSMiddleware
@@ -68,8 +69,7 @@ def get_tiktok_url(tiktok_id: str) -> str:
 
 @app.get("/")
 async def form():
-
-    #return FileResponse("web/index.html")
+    # return FileResponse("web/index.html")
     return RedirectResponse(url="https://ttk.lueyo.es")
 
 
@@ -167,16 +167,36 @@ def get_facebook_url(facebook_id: str) -> str:
 async def download_facebook_video_by_id(facebook_id: str):
     # Check if facebook_id matches the pattern like 1AZfMP4wBz (length and character types)
     if re.fullmatch(r"[A-Za-z0-9]{10}", facebook_id):
+        print(f"Detected short Facebook ID: {facebook_id}")
         # Make a request to get the 302 redirect location header
         share_url = f"https://www.facebook.com/share/v/{facebook_id}/"
         try:
             response = requests.head(share_url, allow_redirects=False)
-            if response.status_code == 302:
+            print(f"Response: {response.headers}")
+            if response.status_code == 302 or response.status_code == 307:
                 location = response.headers.get("location")
                 if location:
-                    # Trim the location URL to remove query parameters
-                    trimmed_url = location.split("?")[0]
-                    url = trimmed_url
+                    # Check if location is a Facebook story URL
+                    if location.startswith("https://www.facebook.com/story.php?"):
+                        # Extract story_fbid parameter from the query string
+                        parsed_url = urlparse(location)
+                        query_params = parse_qs(parsed_url.query)
+                        story_fbid = query_params.get("story_fbid", [None])[0]
+                        if story_fbid:
+                            facebook_id = story_fbid
+                            print(f"Extracted story_fbid: {story_fbid}")
+
+                    # Check if location is a Facebook videos URL format
+                    elif "/videos/" in location:
+                        # Extract video ID from /videos/ format
+                        match = re.search(r"/videos/(\d+)", location)
+                        if match:
+                            facebook_id = match.group(1)
+                            print(f"Extracted video ID from videos URL: {facebook_id}")
+
+                    # Always use the facebook_id (either original or extracted) to construct proper reel URL
+                    url = get_facebook_url(facebook_id)
+                    print(f"Using reel URL: {url}")
                 else:
                     url = get_facebook_url(facebook_id)
             else:
