@@ -60,6 +60,11 @@ def get_tiktok_url(tiktok_id: str) -> str:
     # Check if the id is short form (e.g. ZNd5tth8o)
     if re.fullmatch(r"[A-Za-z0-9]+", tiktok_id):
         return f"https://vm.tiktok.com/{tiktok_id}"
+    # Check if the id is new format (e.g. doctorfision/7539221127382535446)
+    elif re.fullmatch(r"[^/]+/\d+", tiktok_id):
+        # Convert new format to old format: username/video_id -> @username/video/video_id
+        username, video_id = tiktok_id.split('/', 1)
+        return f"https://www.tiktok.com/@{username}/video/{video_id}"
     # Check if the id is long form (e.g. @drielita/video/7498636088018210070)
     elif re.fullmatch(r"@[^/]+/video/\d+", tiktok_id):
         return f"https://www.tiktok.com/{tiktok_id}"

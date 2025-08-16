@@ -141,11 +141,28 @@
                     }
                     return 'https://tk.lueyo.es/t' + path;
                 } else if (parsedUrl.hostname === 'www.tiktok.com') {
-                    let path = parsedUrl.pathname;
-                    if (path.endsWith('/')) {
-                        path = path.slice(0, -1);
+                    const pathParts = parsedUrl.pathname.split('/').filter(Boolean);
+                    // Handle new format: /t/username/video_id
+                    if (pathParts.length >= 3 && pathParts[0] === 't' && pathParts[2].match(/^\d+$/)) {
+                        const username = pathParts[1];
+                        const videoId = pathParts[2];
+                        return `https://tk.lueyo.es/t/${username}/${videoId}`;
                     }
-                    return 'https://tk.lueyo.es/t' + path;
+                    // Handle old format: /t/@username/video/video_id
+                    else if (pathParts.length >= 4 && pathParts[0] === 't' && pathParts[1].startsWith('@') && pathParts[2] === 'video') {
+                        const username = pathParts[1].substring(1); // Remove @
+                        const videoId = pathParts[3];
+                        return `https://tk.lueyo.es/t/${username}/${videoId}`;
+                    }
+                    // Handle direct TikTok URL: /@username/video/video_id
+                    else if (pathParts.length >= 3 && pathParts[1].startsWith('@') && pathParts[2] === 'video') {
+                        const username = pathParts[1].substring(1); // Remove @
+                        const videoId = pathParts[3];
+                        return `https://tk.lueyo.es/t/${username}/${videoId}`;
+                    }
+                    else {
+                        return 'https://tk.lueyo.es/t' + parsedUrl.pathname;
+                    }
                 }
                 // Instagram URL handling
                 else if (parsedUrl.hostname === 'www.instagram.com') {
