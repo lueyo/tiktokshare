@@ -1,5 +1,5 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 import os
 import re
 import yt_dlp
@@ -11,7 +11,21 @@ from services.InstagramService import InstagramService
 from services.FacebookService import FacebookService
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+# Predefined messages for HTTP status codes
+HTTP_MESSAGES = {
+    400: "Solicitud incorrecta",
+    401: "No autorizado",
+    403: "Prohibido",
+    404: "No encontrado",
+    405: "Método no permitido",
+    422: "Entidad no procesable",
+    500: "Error interno del servidor",
+    502: "Puerta de enlace incorrecta",
+    503: "Servicio no disponible",
+    504: "Tiempo de espera agotado",
+}
+
+app = FastAPI(debug=False)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,6 +33,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Exception handlers for predefined messages
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    message = HTTP_MESSAGES.get(exc.status_code, "Error desconocido")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": message}
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    message = HTTP_MESSAGES.get(500, "Error interno del servidor")
+    return JSONResponse(
+        status_code=500,
+        content={"error": message}
+    )
 
 VIDEO_DIR = "./videos"
 VIDEO_DIR_T = os.path.join(VIDEO_DIR, "t")
