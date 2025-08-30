@@ -65,6 +65,10 @@ def get_tiktok_url(tiktok_id: str) -> str:
         # Convert new format to old format: username/video_id -> @username/video/video_id
         username, video_id = tiktok_id.split('/', 1)
         return f"https://www.tiktok.com/@{username}/video/{video_id}"
+    # without video and username but /l/ (e.g. l/7498636088018210070)
+    elif re.fullmatch(r"l/\d+", tiktok_id):
+        video_id = tiktok_id.split('/', 1)[1]
+        return f"https://www.tiktok.com/@/video/{video_id}"
     # Check if the id is long form (e.g. @drielita/video/7498636088018210070)
     elif re.fullmatch(r"@[^/]+/video/\d+", tiktok_id):
         return f"https://www.tiktok.com/{tiktok_id}"
@@ -85,6 +89,7 @@ async def ping():
 
 async def download_tiktok_video_by_id(tiktok_id: str):
     url = get_tiktok_url(tiktok_id)
+    print(f"Resolved TikTok URL: {url}")
     if not url:
         raise HTTPException(status_code=400, detail="Invalid TikTok ID format")
 
