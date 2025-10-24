@@ -117,6 +117,10 @@ async def form():
 async def ping():
     return {"message": "pong"}  # Return a simple pong response
 
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse("web/favicon.png")
+
 
 async def download_tiktok_video_by_id(tiktok_id: str):
     url = get_tiktok_url(tiktok_id)
