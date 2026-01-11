@@ -9,6 +9,7 @@ import requests
 from urllib.parse import parse_qs, urlparse
 from services.InstagramService import InstagramService
 from services.FacebookService import FacebookService
+from services.TiktokService import TiktokService
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -63,11 +64,11 @@ def get_tiktok_url(tiktok_id: str) -> str:
     # Check if the id is new format (e.g. doctorfision/7539221127382535446)
     elif re.fullmatch(r"[^/]+/\d+", tiktok_id):
         # Convert new format to old format: username/video_id -> @username/video/video_id
-        username, video_id = tiktok_id.split('/', 1)
+        username, video_id = tiktok_id.split("/", 1)
         return f"https://www.tiktok.com/@{username}/video/{video_id}"
     # without video and username but /l/ (e.g. l/7498636088018210070)
     elif re.fullmatch(r"l/\d+", tiktok_id):
-        video_id = tiktok_id.split('/', 1)[1]
+        video_id = tiktok_id.split("/", 1)[1]
         return f"https://www.tiktok.com/@/video/{video_id}"
     # Check if the id is long form (e.g. @drielita/video/7498636088018210070)
     elif re.fullmatch(r"@[^/]+/video/\d+", tiktok_id):
@@ -85,6 +86,7 @@ async def form():
 @app.get("/ping")
 async def ping():
     return {"message": "pong"}  # Return a simple pong response
+
 
 @app.get("/favicon.ico")
 async def favicon():
@@ -118,9 +120,20 @@ async def download_tiktok_video_by_id(tiktok_id: str):
             if not os.path.exists(filename):
                 raise HTTPException(status_code=500, detail="Video download failed")
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error downloading video: {str(e)}"
-        )
+        # Fallback to TiktokService if yt_dlp fails
+        try:
+            filename = os.path.join(VIDEO_DIR_T, f"{tiktok_id.replace('/', '_')}.mp4")
+            TiktokService.download_video_with_requests(url, filename)
+        except Exception as fallback_e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error downloading video: {str(e)}; Fallback error: {str(fallback_e)}",
+            )
+
+        if not os.path.exists(filename):
+            raise HTTPException(
+                status_code=500, detail="Video download failed in fallback"
+            )
 
     return FileResponse(filename, media_type="video/mp4")
 
@@ -199,7 +212,6 @@ async def download_facebook_video_by_id(facebook_id: str):
                         if story_fbid:
                             facebook_id = story_fbid
                             print(f"Extracted story_fbid: {story_fbid}")
-
 
                     # Check if location is a Facebook videos URL format
                     elif "/videos/" in location:
