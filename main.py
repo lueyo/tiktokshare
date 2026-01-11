@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from services.InstagramService import InstagramService
 from services.FacebookService import FacebookService
 from services.TiktokService import TiktokService
+from services.ThreadsService import ThreadsService
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -26,18 +27,26 @@ VIDEO_DIR_T = os.path.join(VIDEO_DIR, "t")
 VIDEO_DIR_X = os.path.join(VIDEO_DIR, "x")
 VIDEO_DIR_I = os.path.join(VIDEO_DIR, "i")
 VIDEO_DIR_F = os.path.join(VIDEO_DIR, "f")
+VIDEO_DIR_H = os.path.join(VIDEO_DIR, "h")
 os.makedirs(VIDEO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR_T, exist_ok=True)
 os.makedirs(VIDEO_DIR_X, exist_ok=True)
 os.makedirs(VIDEO_DIR_I, exist_ok=True)
 os.makedirs(VIDEO_DIR_F, exist_ok=True)
+os.makedirs(VIDEO_DIR_H, exist_ok=True)
 
 
 async def delete_old_videos():
     while True:
         now = time.time()
-        # Check all four directories
-        for directory in [VIDEO_DIR_T, VIDEO_DIR_X, VIDEO_DIR_I, VIDEO_DIR_F]:
+        # Check all five directories
+        for directory in [
+            VIDEO_DIR_T,
+            VIDEO_DIR_X,
+            VIDEO_DIR_I,
+            VIDEO_DIR_F,
+            VIDEO_DIR_H,
+        ]:
             for filename in os.listdir(directory):
                 filepath = os.path.join(directory, filename)
                 if os.path.isfile(filepath):
@@ -329,6 +338,39 @@ async def download_instagram_video_by_id(instagram_id: str):
 @app.get("/i/{instagram_id}")
 async def download_instagram_video(instagram_id: str):
     return await download_instagram_video_by_id(instagram_id)
+
+
+def get_threads_url(thread_code: str) -> str:
+    """Convert a Threads post ID to a full URL"""
+    return f"https://www.threads.net/i/post/{thread_code}"
+
+
+@app.get("/h/{thread_code}")
+async def download_threads_video(thread_code: str):
+    """
+    Download a Threads video by its post ID.
+    Example: /h/DS-74VmCbK9 -> https://www.threads.net/i/post/DS-74VmCbK9
+    """
+    url = get_threads_url(thread_code)
+    filename = os.path.join(VIDEO_DIR_H, f"{thread_code}.mp4")
+
+    # Check if file already exists
+    if os.path.exists(filename):
+        return FileResponse(filename, media_type="video/mp4")
+
+    try:
+        ThreadsService.download_video_with_requests(thread_code, filename)
+    except Exception as e:
+        if os.path.exists(filename):
+            os.remove(filename)
+        raise HTTPException(
+            status_code=500, detail=f"Error downloading Threads video: {str(e)}"
+        )
+
+    if not os.path.exists(filename):
+        raise HTTPException(status_code=500, detail="Video download failed")
+
+    return FileResponse(filename, media_type="video/mp4")
 
 
 @app.get("/t/{tiktok_id:path}")
