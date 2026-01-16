@@ -70,15 +70,15 @@ def get_tiktok_url(tiktok_id: str) -> str:
     # Check if the id is short form (e.g. ZNd5tth8o)
     if re.fullmatch(r"[A-Za-z0-9]+", tiktok_id):
         return f"https://vm.tiktok.com/{tiktok_id}"
+    # without video and username but /l/ (e.g. l/7498636088018210070) - check BEFORE general pattern
+    elif re.fullmatch(r"l/\d+", tiktok_id):
+        video_id = tiktok_id.split("/", 1)[1]
+        return f"https://www.tiktok.com/video/{video_id}"
     # Check if the id is new format (e.g. doctorfision/7539221127382535446)
     elif re.fullmatch(r"[^/]+/\d+", tiktok_id):
         # Convert new format to old format: username/video_id -> @username/video/video_id
         username, video_id = tiktok_id.split("/", 1)
         return f"https://www.tiktok.com/@{username}/video/{video_id}"
-    # without video and username but /l/ (e.g. l/7498636088018210070)
-    elif re.fullmatch(r"l/\d+", tiktok_id):
-        video_id = tiktok_id.split("/", 1)[1]
-        return f"https://www.tiktok.com/@/video/{video_id}"
     # Check if the id is long form (e.g. @drielita/video/7498636088018210070)
     elif re.fullmatch(r"@[^/]+/video/\d+", tiktok_id):
         return f"https://www.tiktok.com/{tiktok_id}"
@@ -108,10 +108,36 @@ async def download_tiktok_video_by_id(tiktok_id: str):
     if not url:
         raise HTTPException(status_code=400, detail="Invalid TikTok ID format")
 
+    # Extract video_id from URL as fallback for when yt-dlp fails
+    video_id = None
+    url_match = re.search(r"tiktok\.com/(?:@[^/]+/)?video/(\d+)", url)
+    if url_match:
+        video_id = url_match.group(1)
+        print(f"Extracted video_id from URL: {video_id}")
+
+    # Try multiple download methods
+    last_error = None
+
+    # Check if file already exists with valid size
+    def is_valid_video_file(filepath, min_size=1024):
+        """Check if file exists and has valid size for a video"""
+        if not os.path.exists(filepath):
+            return False
+        size = os.path.getsize(filepath)
+        print(f"File exists: {filepath}, size: {size} bytes")
+        return size > min_size
+
+    # Method 1: yt-dlp with TikTok-specific options
     ydl_opts = {
         "outtmpl": os.path.join(VIDEO_DIR_T, "%(id)s.%(ext)s"),
         "quiet": True,
         "no_warnings": True,
+        "extractor_retries": 3,
+        "fragment_retries": 3,
+        "skip_unavailable_fragments": False,
+        "nocheckcertificate": True,
+        "prefer_insecure": True,
+        "geo_bypass": True,
     }
 
     try:
@@ -121,30 +147,100 @@ async def download_tiktok_video_by_id(tiktok_id: str):
             ext = info_dict.get("ext")
             filename = os.path.join(VIDEO_DIR_T, f"{video_id}.{ext}")
 
-            if os.path.exists(filename):
+            if is_valid_video_file(filename):
                 return FileResponse(filename, media_type="video/mp4")
 
             ydl.extract_info(url, download=True)
 
-            if not os.path.exists(filename):
-                raise HTTPException(status_code=500, detail="Video download failed")
+            if is_valid_video_file(filename):
+                return FileResponse(filename, media_type="video/mp4")
+            else:
+                # Remove incomplete file
+                if os.path.exists(filename):
+                    os.remove(filename)
+                    print(f"Removed incomplete file: {filename}")
     except Exception as e:
-        # Fallback to TiktokService if yt_dlp fails
-        try:
-            filename = os.path.join(VIDEO_DIR_T, f"{tiktok_id.replace('/', '_')}.mp4")
-            TiktokService.download_video_with_requests(url, filename)
-        except Exception as fallback_e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error downloading video: {str(e)}; Fallback error: {str(fallback_e)}",
-            )
+        last_error = e
+        print(f"yt-dlp method 1 failed: {e}")
 
-        if not os.path.exists(filename):
-            raise HTTPException(
-                status_code=500, detail="Video download failed in fallback"
-            )
+    # Method 2: Try with embed URL format
+    try:
+        embed_video_id = tiktok_id.split("/")[-1] if "/" in tiktok_id else tiktok_id
+        embed_url = f"https://www.tiktok.com/embed/{embed_video_id}"
+        print(f"Trying embed URL: {embed_url}")
 
-    return FileResponse(filename, media_type="video/mp4")
+        ydl_opts_2 = {
+            "outtmpl": os.path.join(VIDEO_DIR_T, "%(id)s.%(ext)s"),
+            "quiet": True,
+            "no_warnings": True,
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts_2) as ydl:
+            info_dict = ydl.extract_info(embed_url, download=False)
+            video_id = info_dict.get("id")
+            ext = info_dict.get("ext")
+            filename = os.path.join(VIDEO_DIR_T, f"{video_id}.{ext}")
+
+            if is_valid_video_file(filename):
+                return FileResponse(filename, media_type="video/mp4")
+
+            ydl.extract_info(embed_url, download=True)
+
+            if is_valid_video_file(filename):
+                return FileResponse(filename, media_type="video/mp4")
+            else:
+                # Remove incomplete file
+                if os.path.exists(filename):
+                    os.remove(filename)
+                    print(f"Removed incomplete file: {filename}")
+    except Exception as e:
+        last_error = e
+        print(f"yt-dlp method 2 (embed) failed: {e}")
+
+    # Method 3: Fallback to TiktokService API
+    try:
+        if not video_id:
+            raise HTTPException(
+                status_code=500, detail="No video_id available for fallback"
+            )
+        filename = os.path.join(VIDEO_DIR_T, f"{video_id}.mp4")
+        print(f"Trying TiktokService fallback with URL: {url}")
+        TiktokService.download_video_with_requests(url, filename)
+
+        if is_valid_video_file(filename, min_size=10240):  # At least 10KB for video
+            return FileResponse(filename, media_type="video/mp4")
+        else:
+            if os.path.exists(filename):
+                os.remove(filename)
+                print(f"Removed incomplete file: {filename}")
+    except Exception as fallback_e:
+        last_error = fallback_e
+        print(f"TiktokService fallback failed: {fallback_e}")
+
+    # Method 4: Try alternative TikTok download API
+    try:
+        if not video_id:
+            raise HTTPException(
+                status_code=500, detail="No video_id available for alternative API"
+            )
+        filename = os.path.join(VIDEO_DIR_T, f"{video_id}.mp4")
+        print("Trying alternative TikTok download API...")
+        TiktokService.download_video_with_alternative_api(url, filename)
+
+        if is_valid_video_file(filename, min_size=10240):  # At least 10KB for video
+            return FileResponse(filename, media_type="video/mp4")
+        else:
+            if os.path.exists(filename):
+                os.remove(filename)
+                print(f"Removed incomplete file: {filename}")
+    except Exception as alt_e:
+        last_error = alt_e
+        print(f"Alternative API also failed: {alt_e}")
+
+    raise HTTPException(
+        status_code=500,
+        detail=f"All TikTok download methods failed. Last error: {str(last_error)}",
+    )
 
 
 def get_x_url(x_id: str) -> str:
