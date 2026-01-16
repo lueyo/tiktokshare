@@ -1,7 +1,14 @@
 import os
 import re
+import logging
 import requests
 from fastapi import HTTPException
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 class TiktokService:
@@ -44,53 +51,75 @@ class TiktokService:
         Returns the path to the saved video file.
         Raises HTTPException on failure.
         """
+        logger.info(f"[SAVETIK] Starting download for URL: {tiktok_url}")
+
         # Prepare form data - note the URL is repeated twice in the params
         params = {
             "url": tiktok_url,
         }
 
+        logger.debug(f"[SAVETIK] Request URL: {cls.SAVETIK_API_URL}")
+        logger.debug(f"[SAVETIK] Request params: {params}")
+        logger.debug(f"[SAVETIK] Request headers: {cls.HEADERS}")
+
         try:
             response = requests.get(
                 cls.SAVETIK_API_URL, headers=cls.HEADERS, params=params
             )
+            logger.info(f"[SAVETIK] Response status code: {response.status_code}")
+            logger.debug(f"[SAVETIK] Response headers: {dict(response.headers)}")
             response.raise_for_status()
         except Exception as e:
+            logger.error(f"[SAVETIK] Error contacting savetik API: {str(e)}")
             raise HTTPException(
                 status_code=500, detail=f"Error contacting savetik API: {str(e)}"
             )
 
         try:
             json_resp = response.json()
+            logger.info(f"[SAVETIK] JSON response: {json_resp}")
         except Exception as e:
+            logger.error(f"[SAVETIK] Invalid response from savetik API: {str(e)}")
+            logger.error(f"[SAVETIK] Raw response text: {response.text}")
             raise HTTPException(
                 status_code=500, detail=f"Invalid response from savetik API: {str(e)}"
             )
 
         # Check for status_code in response
-        if json_resp.get("status_code") != 0:
+        status_code = json_resp.get("status_code")
+        logger.info(f"[SAVETIK] Response status_code: {status_code}")
+        if status_code != 0:
             error_detail = json_resp.get("postinfo", {}).get(
                 "media_title", "Unknown error"
             )
+            logger.error(f"[SAVETIK] API error: {error_detail}")
             raise HTTPException(
                 status_code=500, detail=f"savetik API error: {error_detail}"
             )
 
         # Extract download URL - prefer hdDownloadUrl, fall back to downloadUrl
         download_url = json_resp.get("hdDownloadUrl") or json_resp.get("downloadUrl")
+        logger.info(f"[SAVETIK] Extracted download_url: {download_url}")
         if not download_url:
+            logger.error("[SAVETIK] No download URL found in response")
             raise HTTPException(
                 status_code=500, detail="No download URL found in savetik response"
             )
 
         # Download the video
+        logger.info(f"[SAVETIK] Starting video download from: {download_url}")
         try:
             video_response = requests.get(
                 download_url,
                 headers={"User-Agent": cls.HEADERS["User-Agent"]},
                 stream=True,
             )
+            logger.info(
+                f"[SAVETIK] Video response status: {video_response.status_code}"
+            )
             video_response.raise_for_status()
         except Exception as e:
+            logger.error(f"[SAVETIK] Error downloading video: {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Error downloading video from savetik URL: {str(e)}",
@@ -104,8 +133,9 @@ class TiktokService:
                     if chunk:
                         total_size += len(chunk)
                         f.write(chunk)
-            print(f"Downloaded video size: {total_size} bytes")
+            logger.info(f"[SAVETIK] Downloaded video size: {total_size} bytes")
         except Exception as e:
+            logger.error(f"[SAVETIK] Error saving video file: {str(e)}")
             raise HTTPException(
                 status_code=500, detail=f"Error saving video file: {str(e)}"
             )
@@ -113,8 +143,10 @@ class TiktokService:
         # Verify file size is valid (at least 10KB for a video)
         if os.path.exists(save_path):
             file_size = os.path.getsize(save_path)
+            logger.info(f"[SAVETIK] File size verification: {file_size} bytes")
             if file_size < 10240:  # Less than 10KB is likely incomplete
                 os.remove(save_path)
+                logger.error(f"[SAVETIK] File too small ({file_size} bytes), removed")
                 raise HTTPException(
                     status_code=500,
                     detail=f"Downloaded file too small ({file_size} bytes), likely incomplete",
@@ -132,17 +164,19 @@ class TiktokService:
         Returns the path to the saved video file.
         Raises HTTPException on failure.
         """
+        logger.info(f"[ALT] Starting alternative API download for URL: {tiktok_url}")
+
         # Try snapTik API first
         try:
             return cls._download_via_snaptik(tiktok_url, save_path)
         except Exception as snap_e:
-            print(f"snapTik API failed: {snap_e}")
+            logger.error(f"[ALT] snapTik API failed: {snap_e}")
 
         # Try ttdownloader API as second alternative
         try:
             return cls._download_via_ttdownloader(tiktok_url, save_path)
         except Exception as ttd_e:
-            print(f"ttdownloader API failed: {ttd_e}")
+            logger.error(f"[ALT] ttdownloader API failed: {ttd_e}")
 
         raise HTTPException(
             status_code=500, detail="All alternative TikTok download APIs failed"
@@ -153,6 +187,12 @@ class TiktokService:
         """
         Download video using snapTik.app API.
         """
+        logger.info(f"[SNAPTIK] Starting download for URL: {tiktok_url}")
+
+        logger.debug(f"[SNAPTIK] Request URL: {cls.SNAPTT_API_URL}")
+        logger.debug(f"[SNAPTIK] Request data: {{'url': {tiktok_url}}}")
+        logger.debug(f"[SNAPTIK] Request headers: {cls.SNAPTt_HEADERS}")
+
         try:
             response = requests.post(
                 cls.SNAPTT_API_URL,
@@ -160,24 +200,32 @@ class TiktokService:
                 headers=cls.SNAPTt_HEADERS,
                 timeout=30,
             )
+            logger.info(f"[SNAPTIK] Response status code: {response.status_code}")
+            logger.debug(f"[SNAPTIK] Response headers: {dict(response.headers)}")
             response.raise_for_status()
         except Exception as e:
+            logger.error(f"[SNAPTIK] Error contacting snapTik API: {str(e)}")
             raise HTTPException(
                 status_code=500, detail=f"Error contacting snapTik API: {str(e)}"
             )
 
         # Parse response - snapTik returns JSON or direct video URL
+        logger.debug(f"[SNAPTIK] Raw response text: {response.text}")
         try:
             json_resp = response.json()
+            logger.info(f"[SNAPTIK] JSON response: {json_resp}")
         except Exception:
             # Try to parse as text (might return direct URL)
             text_resp = response.text
+            logger.info(f"[SNAPTIK] Response is text: {text_resp[:200]}...")
             # Check if it's a direct video URL
             if text_resp.startswith("http") and (
                 "tiktok" in text_resp or ".mp4" in text_resp
             ):
                 download_url = text_resp.strip()
+                logger.info(f"[SNAPTIK] Direct video URL found: {download_url}")
             else:
+                logger.error("[SNAPTIK] Invalid response format from snapTik API")
                 raise HTTPException(
                     status_code=500, detail=f"Invalid response from snapTik API"
                 )
@@ -188,12 +236,15 @@ class TiktokService:
                 or json_resp.get("url")
                 or json_resp.get("download_url")
             )
+            logger.info(f"[SNAPTIK] Extracted download_url from JSON: {download_url}")
             if not download_url and json_resp.get("status") == "success":
                 # Try nested structure
                 data = json_resp.get("data", [{}])[0] if json_resp.get("data") else {}
                 download_url = data.get("video") or data.get("url")
+                logger.info(f"[SNAPTIK] Extracted from nested data: {download_url}")
 
         if not download_url:
+            logger.error("[SNAPTIK] No download URL found in response")
             raise HTTPException(
                 status_code=500, detail="No download URL found in snapTik response"
             )
@@ -205,6 +256,12 @@ class TiktokService:
         """
         Download video using ttdownloader.com API.
         """
+        logger.info(f"[TTDOWNLOADER] Starting download for URL: {tiktok_url}")
+
+        logger.debug(f"[TTDOWNLOADER] Request URL: {cls.TTDOWN_API_URL}")
+        logger.debug(f"[TTDOWNLOADER] Request data: {{'url': {tiktok_url}}}")
+        logger.debug(f"[TTDOWNLOADER] Request headers: {cls.SNAPTt_HEADERS}")
+
         try:
             response = requests.post(
                 cls.TTDOWN_API_URL,
@@ -212,8 +269,11 @@ class TiktokService:
                 headers=cls.SNAPTt_HEADERS,
                 timeout=30,
             )
+            logger.info(f"[TTDOWNLOADER] Response status code: {response.status_code}")
+            logger.debug(f"[TTDOWNLOADER] Response headers: {dict(response.headers)}")
             response.raise_for_status()
         except Exception as e:
+            logger.error(f"[TTDOWNLOADER] Error contacting ttdownloader API: {str(e)}")
             raise HTTPException(
                 status_code=500, detail=f"Error contacting ttdownloader API: {str(e)}"
             )
@@ -221,7 +281,10 @@ class TiktokService:
         # Parse response
         try:
             json_resp = response.json()
+            logger.info(f"[TTDOWNLOADER] JSON response: {json_resp}")
         except Exception:
+            logger.error(f"[TTDOWNLOADER] Invalid response from ttdownloader API")
+            logger.error(f"[TTDOWNLOADER] Raw response text: {response.text}")
             raise HTTPException(
                 status_code=500, detail=f"Invalid response from ttdownloader API"
             )
@@ -232,8 +295,10 @@ class TiktokService:
             or json_resp.get("video")
             or json_resp.get("url")
         )
+        logger.info(f"[TTDOWNLOADER] Extracted download_url: {download_url}")
 
         if not download_url:
+            logger.error("[TTDOWNLOADER] No download URL found in response")
             raise HTTPException(
                 status_code=500, detail="No download URL found in ttdownloader response"
             )
@@ -245,6 +310,9 @@ class TiktokService:
         """
         Helper method to download video from a URL and save to file.
         """
+        logger.info(f"[VIDEO] Starting video download from: {download_url}")
+        logger.debug(f"[VIDEO] Save path: {save_path}")
+
         try:
             video_response = requests.get(
                 download_url,
@@ -252,8 +320,11 @@ class TiktokService:
                 stream=True,
                 timeout=120,  # Longer timeout for videos
             )
+            logger.info(f"[VIDEO] Response status code: {video_response.status_code}")
+            logger.debug(f"[VIDEO] Response headers: {dict(video_response.headers)}")
             video_response.raise_for_status()
         except Exception as e:
+            logger.error(f"[VIDEO] Error downloading video from URL: {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Error downloading video from URL: {str(e)}",
@@ -266,8 +337,9 @@ class TiktokService:
                     if chunk:
                         total_size += len(chunk)
                         f.write(chunk)
-            print(f"Downloaded video size: {total_size} bytes")
+            logger.info(f"[VIDEO] Downloaded video size: {total_size} bytes")
         except Exception as e:
+            logger.error(f"[VIDEO] Error saving video file: {str(e)}")
             raise HTTPException(
                 status_code=500, detail=f"Error saving video file: {str(e)}"
             )
@@ -275,8 +347,10 @@ class TiktokService:
         # Verify file size is valid (at least 10KB for a video)
         if os.path.exists(save_path):
             file_size = os.path.getsize(save_path)
+            logger.info(f"[VIDEO] File size verification: {file_size} bytes")
             if file_size < 10240:  # Less than 10KB is likely incomplete
                 os.remove(save_path)
+                logger.error(f"[VIDEO] File too small ({file_size} bytes), removed")
                 raise HTTPException(
                     status_code=500,
                     detail=f"Downloaded file too small ({file_size} bytes), likely incomplete",
