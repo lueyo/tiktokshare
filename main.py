@@ -455,7 +455,7 @@ async def download_threads_video(thread_code: str):
         return FileResponse(filename, media_type="video/mp4")
 
     try:
-        ThreadsService.download_video_with_requests(thread_code, filename)
+        ThreadsService.download_video(thread_code, filename)
     except Exception as e:
         if os.path.exists(filename):
             os.remove(filename)
