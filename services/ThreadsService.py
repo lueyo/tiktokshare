@@ -63,7 +63,7 @@ class ThreadsService:
         "Sec-Fetch-Site": "same-site",
         "TE": "trailers",
     }
-    
+
     DOWNLOAD_WORKER_HEADERS = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -79,11 +79,59 @@ class ThreadsService:
         "Sec-Fetch-Site": "cross-site",
         "Sec-Fetch-User": "?1",
         "Priority": "u=0, i",
-        "TE": "trailers"
+        "TE": "trailers",
     }
 
     @classmethod
-    def get_video_url(cls, thread_code: str) -> str:
+    def obtener_video_threads(self, html_content):
+
+        try:
+            # 1. Expresión regular para encontrar el array de video_versions
+            # Busca: "video_versions":[{...}]
+            # Explicación del regex:
+            # \"video_versions\":\s* -> Busca la clave con posibles espacios
+            # (\[\{.*?\}\])           -> Captura el grupo que empieza por [{ y termina en }]
+            patron = r'"video_versions":\s*(\[\{.*?\}\])'
+
+            # Usamos findall para encontrar todas las ocurrencias (por si hay posts relacionados)
+            coincidencias = re.findall(patron, html_content)
+
+            if not coincidencias:
+                return "No se encontraron videos en el código proporcionado."
+
+            # Iteramos sobre las coincidencias encontradas (usualmente la primera es la principal)
+            for json_str in coincidencias:
+                try:
+                    # Parsear el JSON encontrado
+                    versiones = json.loads(json_str)
+
+                    # Buscar calidad 101 (HD)
+                    video_hd = next(
+                        (v for v in versiones if v.get("type") == 101), None
+                    )
+
+                    # Si no hay 101, buscar 102 o 103 (SD)
+                    if not video_hd:
+                        video_hd = next(
+                            (v for v in versiones if v.get("type") in [102, 103]), None
+                        )
+
+                    # Si encontramos un video válido, retornamos la URL y terminamos
+                    if video_hd and "url" in video_hd:
+                        return video_hd["url"]
+
+                except json.JSONDecodeError:
+                    continue  # Si una coincidencia falla, probamos la siguiente
+
+            return (
+                "Se encontraron estructuras de datos, pero ninguna URL de video válida."
+            )
+
+        except Exception as e:
+            return f"Error inesperado: {str(e)}"
+
+    @classmethod
+    def get_video_url(self, cls, thread_code: str) -> str:
         """
         Método principal para intentar extraer la URL directamente de Threads.
         """
@@ -97,6 +145,7 @@ class ThreadsService:
             )
 
         html_content = response.text
+        print(self.obtener_video_threads(html_content))
 
         # Pattern to match the JSON directly inside the script tag
         pattern = (
@@ -165,7 +214,7 @@ class ThreadsService:
         3. Descarga usando el worker.
         """
         print("Iniciando descarga alternativa con Publer...")
-        
+
         # --- Peticion 1: Crear Job ---
         job_url = "https://app.publer.com/tools/media"
         payload = {"url": thread_url, "token": cls.PUBLER_TOKEN, "macOS": False}
@@ -175,10 +224,10 @@ class ThreadsService:
             response.raise_for_status()
             job_data = response.json()
             job_id = job_data.get("job_id")
-            
+
             if not job_id:
                 raise Exception("No job_id received from Publer")
-                
+
         except Exception as e:
             print(f"Publer Error al crear job: {e}")
             raise HTTPException(
@@ -206,12 +255,14 @@ class ThreadsService:
                     payload_data = status_data.get("payload", [])
                     if payload_data:
                         video_entry = payload_data[0]
-                        if video_entry.get("type") == "video" and video_entry.get("path"):
+                        if video_entry.get("type") == "video" and video_entry.get(
+                            "path"
+                        ):
                             video_url = video_entry["path"]
                             break
                 elif status == "working":
                     # Continuamos al siguiente ciclo (que hará el sleep al inicio)
-                    continue 
+                    continue
                 else:
                     # Estado desconocido o error
                     continue
@@ -239,12 +290,12 @@ class ThreadsService:
                 stream=True,
             )
             video_response.raise_for_status()
-            
+
             with open(save_path, "wb") as f:
                 for chunk in video_response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-            
+
             return save_path
 
         except Exception as e:
@@ -265,7 +316,7 @@ class ThreadsService:
             # Intentar método principal
             print("Intentando método principal (Scraping)...")
             video_url = cls.get_video_url(thread_code)
-            
+
             # Intentar descarga directa
             video_response = requests.get(
                 video_url,
@@ -278,7 +329,7 @@ class ThreadsService:
                 for chunk in video_response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-            
+
             print("Descarga principal exitosa.")
             return save_path
 
@@ -298,9 +349,15 @@ if __name__ == "__main__":
         thread_code = "DS-74VmCbK9"
 
     save_location = "video_threads.mp4"
+    thread_code = "DS-74VmCbK9"
 
     print(f"Probando descarga para código: {thread_code}")
-    
+    response = requests.get(
+        ThreadsService.THREADS_URL_TEMPLATE.format(thread_code), headers=ThreadsService.HEADERS
+    )
+    html_content = response.text
+    print(ThreadsService.obtener_video_threads(html_content))
+
     try:
         ThreadsService.download_video_with_requests(thread_code, save_location)
         print(f"Video guardado correctamente en: {save_location}")
