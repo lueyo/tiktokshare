@@ -7,6 +7,18 @@ from fastapi import HTTPException
 import json
 
 
+class VideoNotFoundError(Exception):
+    """Excepción cuando el video no existe o no se puede encontrar"""
+
+    pass
+
+
+class DownloadError(Exception):
+    """Excepción cuando falla la descarga del video"""
+
+    pass
+
+
 class ThreadsService:
 
     THREADS_URL_TEMPLATE = "https://www.threads.net/i/post/{}"
@@ -94,16 +106,14 @@ class ThreadsService:
             Contenido HTML de la página
 
         Raises:
-            HTTPException: Si hay error al hacer la petición
+            DownloadError: Si hay error al hacer la petición
         """
         try:
             response = requests.get(url, headers=cls.HEADERS)
             response.raise_for_status()
             return response.text
         except requests.RequestException as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error fetching Threads page: {str(e)}"
-            )
+            raise DownloadError("Error contacting Threads API")
 
     @classmethod
     def obtener_video_threads(cls, html_content: str) -> str:
@@ -117,7 +127,7 @@ class ThreadsService:
             URL del video en calidad HD
 
         Raises:
-            HTTPException: Si no se encuentra el video
+            VideoNotFoundError: Si no se encuentra el video
         """
         # 1. Intentar extraer desde JSON estructurado (más confiable)
         try:
@@ -160,9 +170,7 @@ class ThreadsService:
         except (json.JSONDecodeError, StopIteration):
             pass  # Si falla, continuamos y lanzamos excepción al final
 
-        raise HTTPException(
-            status_code=404, detail="No se encontró video en el post de Threads"
-        )
+        raise VideoNotFoundError("Video not found")
 
     @classmethod
     def _download_with_publer(cls, thread_url: str, save_path: str) -> str:
@@ -189,9 +197,7 @@ class ThreadsService:
 
         except Exception as e:
             print(f"Publer Error al crear job: {e}")
-            raise HTTPException(
-                status_code=500, detail=f"Error creating Publer job: {str(e)}"
-            )
+            raise DownloadError("Error contacting Threads API")
 
         # --- Peticion 2: Polling del estado ---
         job_status_url = f"https://app.publer.com/api/v1/job_status/{job_id}"
@@ -228,10 +234,7 @@ class ThreadsService:
                 continue
 
         if not video_url:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to get video URL from Publer after 5 polling attempts",
-            )
+            raise DownloadError("Failed to download video")
 
         # --- Peticion 3: Descargar video del worker ---
         encoded_video_url = urllib.parse.quote(video_url)
@@ -254,10 +257,7 @@ class ThreadsService:
             return save_path
 
         except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error downloading video from Publer worker: {str(e)}",
-            )
+            raise DownloadError("Error downloading video")
 
     @classmethod
     def download_video(cls, thread_code: str, save_path: str) -> str:
@@ -307,8 +307,11 @@ class ThreadsService:
             print(f"Descarga exitosa: {save_path}")
             return save_path
 
-        except HTTPException:
-            # Re-lanzar HTTPException directamente (ya tiene el mensaje apropiado)
+        except VideoNotFoundError:
+            # Re-lanzar VideoNotFoundError directamente
+            raise
+        except DownloadError:
+            # Re-lanzar DownloadError directamente
             raise
         except Exception as e:
             # Para cualquier otro error, usar Publer como fallback

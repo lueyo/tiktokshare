@@ -3,6 +3,19 @@ import re
 import requests
 from fastapi import HTTPException
 
+
+class VideoNotFoundError(Exception):
+    """Excepción cuando el video no existe o no se puede encontrar"""
+
+    pass
+
+
+class DownloadError(Exception):
+    """Excepción cuando falla la descarga del video"""
+
+    pass
+
+
 class InstagramService:
     SAVEGRAM_API_URL = "https://savegram.app/api/ajaxSearch"
     HEADERS = {
@@ -28,7 +41,7 @@ class InstagramService:
         """
         Downloads Instagram video using the savegram.app API as a fallback method.
         Returns the path to the saved video file.
-        Raises HTTPException on failure.
+        Raises VideoNotFoundError or DownloadError on failure.
         """
         # Prepare form data for POST request
         data = {
@@ -41,31 +54,44 @@ class InstagramService:
         }
 
         try:
-            response = requests.post(cls.SAVEGRAM_API_URL, headers=cls.HEADERS, data=data)
+            response = requests.post(
+                cls.SAVEGRAM_API_URL, headers=cls.HEADERS, data=data
+            )
             response.raise_for_status()
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error contacting savegram API: {str(e)}")
+            raise DownloadError("Error contacting Instagram API")
 
-        json_resp = response.json()
+        try:
+            json_resp = response.json()
+        except Exception as e:
+            raise DownloadError("Invalid response from Instagram API")
+
         if json_resp.get("status") != "ok" or "data" not in json_resp:
-            raise HTTPException(status_code=500, detail="Invalid response from savegram API")
+            raise VideoNotFoundError("Video not found")
 
         # Extract the download URL from the HTML in json_resp["data"]
         html_data = json_resp["data"]
         # The download URL is in an <a href="..."> tag with class "abutton is-success"
         # Use regex to extract the href link for the video download
-        match = re.search(r'<a href="([^"]+)"[^>]*class="abutton is-success[^"]*"[^>]*title="Descargar video"', html_data)
+        match = re.search(
+            r'<a href="([^"]+)"[^>]*class="abutton is-success[^"]*"[^>]*title="Descargar video"',
+            html_data,
+        )
         if not match:
-            raise HTTPException(status_code=500, detail="Download URL not found in savegram response")
+            raise VideoNotFoundError("Video not found")
 
         download_url = match.group(1)
 
         # Download the video content
         try:
-            video_response = requests.get(download_url, headers={"User-Agent": cls.HEADERS["User-Agent"]}, stream=True)
+            video_response = requests.get(
+                download_url,
+                headers={"User-Agent": cls.HEADERS["User-Agent"]},
+                stream=True,
+            )
             video_response.raise_for_status()
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error downloading video from savegram URL: {str(e)}")
+            raise DownloadError("Error downloading video")
 
         # Save the video content to save_path
         try:
@@ -74,6 +100,6 @@ class InstagramService:
                     if chunk:
                         f.write(chunk)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error saving video file: {str(e)}")
+            raise DownloadError("Error saving video file")
 
         return save_path

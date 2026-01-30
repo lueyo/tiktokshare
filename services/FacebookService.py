@@ -4,6 +4,18 @@ import requests
 from fastapi import HTTPException
 
 
+class VideoNotFoundError(Exception):
+    """Excepción cuando el video no existe o no se puede encontrar"""
+
+    pass
+
+
+class DownloadError(Exception):
+    """Excepción cuando falla la descarga del video"""
+
+    pass
+
+
 class FacebookService:
     FSAVE_API_URL = "https://fsave.net/proxy.php"
     HEADERS = {
@@ -29,33 +41,26 @@ class FacebookService:
         """
         Descarga un video de Facebook usando la API de fsave.net como método alternativo.
         Devuelve la ruta al archivo guardado.
-        Lanza HTTPException en caso de error.
+        Lanza VideoNotFoundError o DownloadError en caso de error.
         """
         data = {"url": facebook_url}
         try:
             response = requests.post(cls.FSAVE_API_URL, headers=cls.HEADERS, data=data)
             response.raise_for_status()
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error contactando fsave.net: {str(e)}"
-            )
+            raise DownloadError("Error contacting Facebook API")
 
         try:
             json_resp = response.json()
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Respuesta inválida de fsave.net: {str(e)}"
-            )
+            raise DownloadError("Invalid response from Facebook API")
 
         # El parámetro que nos interesa es previewUrl
         preview_url = None
         if "api" in json_resp and "previewUrl" in json_resp["api"]:
             preview_url = json_resp["api"]["previewUrl"]
         if not preview_url:
-            raise HTTPException(
-                status_code=500,
-                detail="No se encontró previewUrl en la respuesta de fsave.net",
-            )
+            raise VideoNotFoundError("Video not found")
 
         # Descargar el video
         try:
@@ -66,10 +71,7 @@ class FacebookService:
             )
             video_response.raise_for_status()
         except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error descargando el video de previewUrl: {str(e)}",
-            )
+            raise DownloadError("Error downloading video")
 
         # Guardar el video
         try:
@@ -78,8 +80,6 @@ class FacebookService:
                     if chunk:
                         f.write(chunk)
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error guardando el archivo de video: {str(e)}"
-            )
+            raise DownloadError("Error saving video file")
 
         return save_path
