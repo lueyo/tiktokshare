@@ -73,11 +73,18 @@ def get_tiktok_url(tiktok_id: str) -> str:
     # without video and username but /l/ (e.g. l/7498636088018210070) - check BEFORE general pattern
     elif re.fullmatch(r"l/\d+", tiktok_id):
         video_id = tiktok_id.split("/", 1)[1]
-        return f"https://www.tiktok.com/video/{video_id}"
+        return f"https://www.tiktok.com/l/{video_id}"
+    # Check if the id is just a long numeric ID (19+ digits = long form video)
+    elif re.fullmatch(r"\d{19,}", tiktok_id):
+        # Long numeric ID without /l/ prefix - add it
+        return f"https://www.tiktok.com/l/{tiktok_id}"
     # Check if the id is new format (e.g. doctorfision/7539221127382535446)
     elif re.fullmatch(r"[^/]+/\d+", tiktok_id):
         # Convert new format to old format: username/video_id -> @username/video/video_id
         username, video_id = tiktok_id.split("/", 1)
+        # Check if video_id is long form (19+ digits)
+        if len(video_id) >= 19:
+            return f"https://www.tiktok.com/l/{video_id}"
         return f"https://www.tiktok.com/@{username}/video/{video_id}"
     # Check if the id is long form (e.g. @drielita/video/7498636088018210070)
     elif re.fullmatch(r"@[^/]+/video/\d+", tiktok_id):
@@ -467,6 +474,12 @@ async def download_threads_video(thread_code: str):
         raise HTTPException(status_code=500, detail="Video download failed")
 
     return FileResponse(filename, media_type="video/mp4")
+
+
+@app.get("/t/l/{video_id}")
+async def download_tiktok_video_long(video_id: str):
+    """Download TikTok long-form video using /l/ URL format"""
+    return await download_tiktok_video_by_id(f"l/{video_id}")
 
 
 @app.get("/t/{tiktok_id:path}")
