@@ -204,7 +204,27 @@ async def download_tiktok_video_by_id(tiktok_id: str):
         last_error = e
         print(f"yt-dlp method 2 (embed) failed: {e}")
 
-    # Method 3: Fallback to TiktokService API
+    # Method 3: Fallback to vt.tnktok.com (NEW - FIRST FALLBACK)
+    try:
+        if not video_id:
+            raise HTTPException(
+                status_code=500, detail="No video_id available for tnktok fallback"
+            )
+        filename = os.path.join(VIDEO_DIR_T, f"{video_id}.mp4")
+        print(f"Trying vt.tnktok.com fallback with URL: {url}")
+        TiktokService.download_video_with_tnktok(url, filename)
+
+        if is_valid_video_file(filename, min_size=10240):
+            return FileResponse(filename, media_type="video/mp4")
+        else:
+            if os.path.exists(filename):
+                os.remove(filename)
+                print(f"Removed incomplete file: {filename}")
+    except Exception as tnktok_e:
+        last_error = tnktok_e
+        print(f"vt.tnktok.com fallback failed: {tnktok_e}")
+
+    # Method 4: Fallback to TiktokService API (SAVETIK)
     try:
         if not video_id:
             raise HTTPException(
@@ -214,7 +234,7 @@ async def download_tiktok_video_by_id(tiktok_id: str):
         print(f"Trying TiktokService fallback with URL: {url}")
         TiktokService.download_video_with_requests(url, filename)
 
-        if is_valid_video_file(filename, min_size=10240):  # At least 10KB for video
+        if is_valid_video_file(filename, min_size=10240):
             return FileResponse(filename, media_type="video/mp4")
         else:
             if os.path.exists(filename):
@@ -224,7 +244,7 @@ async def download_tiktok_video_by_id(tiktok_id: str):
         last_error = fallback_e
         print(f"TiktokService fallback failed: {fallback_e}")
 
-    # Method 4: Try alternative TikTok download API
+    # Method 5: Try alternative TikTok download API
     try:
         if not video_id:
             raise HTTPException(
@@ -234,7 +254,7 @@ async def download_tiktok_video_by_id(tiktok_id: str):
         print("Trying alternative TikTok download API...")
         TiktokService.download_video_with_alternative_api(url, filename)
 
-        if is_valid_video_file(filename, min_size=10240):  # At least 10KB for video
+        if is_valid_video_file(filename, min_size=10240):
             return FileResponse(filename, media_type="video/mp4")
         else:
             if os.path.exists(filename):
