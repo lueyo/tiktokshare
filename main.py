@@ -440,15 +440,20 @@ async def download_instagram_video_by_id(instagram_id: str):
             if not os.path.exists(filename):
                 raise HTTPException(status_code=500, detail="Video download failed")
     except Exception as e:
-        # Fallback to InstagramService download with requests
+        # Fallback 1: vxinstagram.com
         try:
             filename = os.path.join(VIDEO_DIR_I, f"{instagram_id}.mp4")
-            InstagramService.download_video_with_requests(url, filename)
-        except Exception as fallback_e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error downloading video: {str(e)}; Fallback error: {str(fallback_e)}",
-            )
+            InstagramService.download_video_with_vxinstagram(url, filename)
+        except Exception as vx_e:
+            # Fallback to InstagramService download with requests
+            try:
+                filename = os.path.join(VIDEO_DIR_I, f"{instagram_id}.mp4")
+                InstagramService.download_video_with_requests(url, filename)
+            except Exception as fallback_e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error downloading video: {str(e)}; Fallback error: {str(fallback_e)}",
+                )
 
         if not os.path.exists(filename):
             raise HTTPException(
