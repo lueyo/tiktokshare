@@ -325,7 +325,10 @@ def get_facebook_url(facebook_id: str) -> str:
 
 async def download_facebook_video_by_id(facebook_id: str):
     # Check if facebook_id matches the pattern like 1AZfMP4wBz (length and character types)
-    if re.fullmatch(r"[A-Za-z0-9]{10}", facebook_id):
+    original_facebook_id = facebook_id
+    is_share_type = bool(re.fullmatch(r"[A-Za-z0-9]{10}", facebook_id))
+    
+    if is_share_type:
         print(f"Detected short Facebook ID: {facebook_id}")
         # Make a request to get the 302 redirect location header
         share_url = f"https://www.facebook.com/share/v/{facebook_id}/"
@@ -398,7 +401,10 @@ async def download_facebook_video_by_id(facebook_id: str):
         # Fallback a FacebookService si falla yt_dlp
         try:
             filename = os.path.join(VIDEO_DIR_F, f"{facebook_id}.mp4")
-            FacebookService.download_video_with_requests(url, filename)
+            if is_share_type:
+                FacebookService.download_video_from_fixacebook(original_facebook_id, filename)
+            else:
+                FacebookService.download_video_with_requests(url, filename)
         except Exception as fallback_e:
             raise HTTPException(
                 status_code=500,
