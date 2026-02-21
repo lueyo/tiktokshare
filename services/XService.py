@@ -29,6 +29,61 @@ class XService:
     }
 
     @classmethod
+    def get_video_url(cls, x_id: str) -> str:
+        """
+        Gets the direct video URL from an X (Twitter) post ID.
+        Returns the direct video URL without downloading.
+        Raises VideoNotFoundError or DownloadError on failure.
+        """
+        url = cls.FX_TWITTER_URL.format(x_id=x_id)
+        print(f"[GET_URL] Request URL: {url}")
+
+        try:
+            response = requests.get(url, headers=cls.HEADERS, timeout=30)
+            print(f"[GET_URL] Response status code: {response.status_code}")
+            response.raise_for_status()
+        except Exception as e:
+            print(f"[GET_URL] Error contacting fxtwitter.com: {e}")
+            raise DownloadError(f"Error contacting fxtwitter.com: {e}")
+
+        html_content = response.text
+        print(f"[GET_URL] HTML content length: {len(html_content)} characters")
+
+        download_url = None
+
+        twitter_stream_match = re.search(
+            r'<meta\s+property="twitter:player:stream"\s+content="([^"]+)"',
+            html_content,
+        )
+        if twitter_stream_match:
+            download_url = twitter_stream_match.group(1)
+            print(f"[GET_URL] Found video URL in twitter:player:stream")
+
+        if not download_url:
+            og_video_match = re.search(
+                r'<meta\s+property="og:video"\s+content="([^"]+)"', html_content
+            )
+            if og_video_match:
+                download_url = og_video_match.group(1)
+                print(f"[GET_URL] Found video URL in og:video")
+
+        if not download_url:
+            og_video_secure_match = re.search(
+                r'<meta\s+property="og:video:secure_url"\s+content="([^"]+)"',
+                html_content,
+            )
+            if og_video_secure_match:
+                download_url = og_video_secure_match.group(1)
+                print(f"[GET_URL] Found video URL in og:video:secure_url")
+
+        if not download_url:
+            print("[GET_URL] No video URL found in meta tags")
+            raise VideoNotFoundError("Video not found in fxtwitter.com response")
+
+        print(f"[GET_URL] Download URL: {download_url}")
+        return download_url
+
+    @classmethod
     def download_video_with_fxtwitter(cls, x_id: str, save_path: str) -> str:
         """
         Downloads X (Twitter) video using fxtwitter.com as fallback.

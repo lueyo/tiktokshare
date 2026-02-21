@@ -106,6 +106,70 @@ class InstagramService:
         return save_path
 
     @classmethod
+    def get_video_url(cls, instagram_url: str) -> str:
+        """
+        Gets the direct video URL from an Instagram URL.
+        Returns the direct video URL without downloading.
+        Raises VideoNotFoundError or DownloadError on failure.
+        """
+        video_id = None
+        url_match = re.search(r"instagram\.com/(?:p|reel|tv)/([^/?]+)", instagram_url)
+        if url_match:
+            video_id = url_match.group(1)
+            print(f"[GET_URL] Extracted video_id: {video_id}")
+        else:
+            raise DownloadError("Could not extract video ID from URL")
+
+        vx_url = f"{cls.VXINSTAGRAM_URL}/reel/{video_id}"
+        print(f"[GET_URL] Request URL: {vx_url}")
+
+        try:
+            response = requests.get(
+                vx_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3",
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+        except Exception as e:
+            raise DownloadError("Error contacting vxinstagram.com")
+
+        html_content = response.text
+
+        download_url = None
+
+        og_video_match = re.search(
+            r'<meta\s+property="og:video"\s+content="([^"]+)"', html_content
+        )
+        if og_video_match:
+            content_url = og_video_match.group(1)
+            rapidsave_match = re.search(r"rapidsaveUrl=([^&]+)", content_url)
+            if rapidsave_match:
+                download_url = rapidsave_match.group(1)
+                print(f"[GET_URL] Extracted rapidsaveUrl from og:video")
+
+        if not download_url:
+            og_video_secure_match = re.search(
+                r'<meta\s+property="og:video:secure_url"\s+content="([^"]+)"',
+                html_content,
+            )
+            if og_video_secure_match:
+                content_url = og_video_secure_match.group(1)
+                rapidsave_match = re.search(r"rapidsaveUrl=([^&]+)", content_url)
+                if rapidsave_match:
+                    download_url = rapidsave_match.group(1)
+                    print(f"[GET_URL] Extracted rapidsaveUrl from og:video:secure_url")
+
+        if not download_url:
+            raise VideoNotFoundError("Video not found in vxinstagram.com")
+
+        print(f"[GET_URL] Download URL: {download_url}")
+        return download_url
+
+    @classmethod
     def download_video_with_vxinstagram(
         cls, instagram_url: str, save_path: str
     ) -> str:

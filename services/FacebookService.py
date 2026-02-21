@@ -2,6 +2,7 @@ import os
 import re
 import requests
 from fastapi import HTTPException
+from typing import Optional
 
 
 class VideoNotFoundError(Exception):
@@ -36,6 +37,49 @@ class FacebookService:
         "Priority": "u=0",
         "TE": "trailers",
     }
+
+    @classmethod
+    def get_video_url(cls, facebook_url: str, is_share_type: bool = False, original_share_id: Optional[str] = None) -> str:
+        """
+        Gets the direct video URL from a Facebook URL.
+        Returns the direct video URL without downloading.
+        Raises VideoNotFoundError or DownloadError on failure.
+        """
+        if is_share_type and original_share_id:
+            url = cls.FIXACEBOOK_URL.format(share_id=original_share_id)
+        else:
+            url = facebook_url
+        
+        print(f"[GET_URL] Request URL: {url}")
+
+        try:
+            response = requests.get(url, headers=cls.HEADERS, timeout=30)
+            response.raise_for_status()
+        except Exception as e:
+            raise DownloadError(f"Error contacting fixacebook.com: {e}")
+
+        html_content = response.text
+
+        video_urls = []
+        
+        twitter_stream_match = re.search(
+            r'<meta\s+name="twitter:player:stream"\s+content="([^"]+)"',
+            html_content
+        )
+        if twitter_stream_match:
+            video_urls.append(twitter_stream_match.group(1))
+
+        og_video_match = re.search(
+            r'<meta\s+property="og:video"\s+content="([^"]+)"',
+            html_content
+        )
+        if og_video_match:
+            video_urls.append(og_video_match.group(1))
+
+        if not video_urls:
+            raise VideoNotFoundError("No video URLs found in fixacebook response")
+
+        return video_urls[0]
 
     @classmethod
     def download_video_with_requests(cls, facebook_url: str, save_path: str) -> str:

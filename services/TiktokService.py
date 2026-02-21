@@ -151,6 +151,60 @@ class TiktokService:
         return save_path
 
     @classmethod
+    def get_video_url(cls, tiktok_url: str) -> str:
+        """
+        Gets the direct video URL from a TikTok URL.
+        Returns the direct video URL without downloading.
+        Raises VideoNotFoundError or DownloadError on failure.
+        """
+        logger.info(f"[GET_URL] Getting video URL for: {tiktok_url}")
+
+        video_id = None
+        url_match = re.search(r"tiktok\.com/(?:@[^/]+/)?(?:video|l)/(\d+)", tiktok_url)
+        if url_match:
+            video_id = url_match.group(1)
+            logger.info(f"[GET_URL] Extracted video_id: {video_id}")
+        else:
+            raise DownloadError("Could not extract video ID from URL")
+
+        tnktok_url = f"{cls.TNKTOK_URL}/{video_id}"
+        logger.info(f"[GET_URL] Request URL: {tnktok_url}")
+
+        try:
+            response = requests.get(
+                tnktok_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7",
+                },
+                timeout=30,
+            )
+            logger.info(f"[GET_URL] Response status code: {response.status_code}")
+            response.raise_for_status()
+        except Exception as e:
+            logger.error(f"[GET_URL] Error contacting vt.tnktok.com: {str(e)}")
+            raise DownloadError("Error contacting vt.tnktok.com")
+
+        html_content = response.text
+
+        og_video_match = re.search(
+            r'<meta\s+property="og:video"\s+content="([^"]+)"', html_content
+        )
+        if not og_video_match:
+            logger.error("[GET_URL] Could not find og:video metatag in HTML")
+            raise VideoNotFoundError("Video not found")
+
+        download_url = og_video_match.group(1)
+        logger.info(f"[GET_URL] Extracted video URL: {download_url}")
+
+        if not download_url:
+            logger.error("[GET_URL] No download URL found in metatag")
+            raise DownloadError("No download URL available")
+
+        return download_url
+
+    @classmethod
     def download_video_with_tnktok(cls, tiktok_url: str, save_path: str) -> str:
         """
         Downloads TikTok video using vt.tnktok.com as first fallback.

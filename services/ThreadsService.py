@@ -95,6 +95,29 @@ class ThreadsService:
     }
 
     @classmethod
+    def get_video_url(cls, thread_code: str) -> str:
+        """
+        Gets the direct video URL from a Threads post ID.
+        Returns the direct video URL without downloading.
+        Raises VideoNotFoundError or DownloadError on failure.
+        """
+        full_thread_url = cls.THREADS_URL_TEMPLATE.format(thread_code)
+        
+        print(f"[GET_URL] Fetching HTML from: {full_thread_url}")
+        
+        try:
+            html_content = cls.fetch_html(full_thread_url)
+            video_url = cls.obtener_video_threads(html_content)
+            print(f"[GET_URL] Video URL: {video_url}")
+            return video_url
+        except VideoNotFoundError:
+            raise
+        except DownloadError:
+            raise
+        except Exception as e:
+            raise DownloadError(f"Error getting video URL: {str(e)}")
+
+    @classmethod
     def fetch_html(cls, url: str) -> str:
         """
         Obtiene el contenido HTML de una URL de Threads.

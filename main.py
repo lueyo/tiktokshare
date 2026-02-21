@@ -7,6 +7,7 @@ import asyncio
 import time
 import requests
 from urllib.parse import parse_qs, urlparse
+from typing import Optional
 from services.InstagramService import InstagramService
 from services.FacebookService import FacebookService
 from services.TiktokService import TiktokService
@@ -279,7 +280,11 @@ def get_x_url(x_id: str) -> str:
 
 
 @app.get("/x/{x_id:path}")
-async def download_x_video(x_id: str):
+async def download_x_video(x_id: str, r: Optional[str] = None):
+    if r is not None:
+        video_url = XService.get_video_url(x_id)
+        return RedirectResponse(url=video_url)
+    
     url = get_x_url(x_id)
     ydl_opts = {
         "outtmpl": os.path.join(VIDEO_DIR_X, "%(id)s.%(ext)s"),
@@ -485,7 +490,11 @@ async def download_instagram_video_by_id(instagram_id: str):
 
 
 @app.get("/i/{instagram_id}")
-async def download_instagram_video(instagram_id: str):
+async def download_instagram_video(instagram_id: str, r: Optional[str] = None):
+    if r is not None:
+        url = get_instagram_url(instagram_id)
+        video_url = InstagramService.get_video_url(url)
+        return RedirectResponse(url=video_url)
     return await download_instagram_video_by_id(instagram_id)
 
 
@@ -495,11 +504,11 @@ def get_threads_url(thread_code: str) -> str:
 
 
 @app.get("/h/{thread_code}")
-async def download_threads_video(thread_code: str):
-    """
-    Download a Threads video by its post ID.
-    Example: /h/DS-74VmCbK9 -> https://www.threads.net/i/post/DS-74VmCbK9
-    """
+async def download_threads_video(thread_code: str, r: Optional[str] = None):
+    if r is not None:
+        video_url = ThreadsService.get_video_url(thread_code)
+        return RedirectResponse(url=video_url)
+    
     url = get_threads_url(thread_code)
     filename = os.path.join(VIDEO_DIR_H, f"{thread_code}.mp4")
 
@@ -523,21 +532,38 @@ async def download_threads_video(thread_code: str):
 
 
 @app.get("/t/l/{video_id}")
-async def download_tiktok_video_long(video_id: str):
-    """Download TikTok long-form video using /l/ URL format"""
+async def download_tiktok_video_long(video_id: str, r: Optional[str] = None):
+    if r is not None:
+        url = get_tiktok_url(f"l/{video_id}")
+        video_url = TiktokService.get_video_url(url)
+        return RedirectResponse(url=video_url)
     return await download_tiktok_video_by_id(f"l/{video_id}")
 
 
 @app.get("/t/{tiktok_id:path}")
-async def download_tiktok_video_t(tiktok_id: str):
+async def download_tiktok_video_t(tiktok_id: str, r: Optional[str] = None):
+    if r is not None:
+        url = get_tiktok_url(tiktok_id)
+        video_url = TiktokService.get_video_url(url)
+        return RedirectResponse(url=video_url)
     return await download_tiktok_video_by_id(tiktok_id)
 
 
 @app.get("/f/{facebook_id}")
-async def download_facebook_video(facebook_id: str):
+async def download_facebook_video(facebook_id: str, r: Optional[str] = None):
+    if r is not None:
+        original_facebook_id = facebook_id
+        is_share_type = bool(re.fullmatch(r"[A-Za-z0-9]{10}", facebook_id))
+        url = get_facebook_url(facebook_id)
+        video_url = FacebookService.get_video_url(url, is_share_type, original_facebook_id if is_share_type else None)
+        return RedirectResponse(url=video_url)
     return await download_facebook_video_by_id(facebook_id)
 
 
 @app.get("/{tiktok_id:path}")
-async def download_tiktok_video(tiktok_id: str):
+async def download_tiktok_video(tiktok_id: str, r: Optional[str] = None):
+    if r is not None:
+        url = get_tiktok_url(tiktok_id)
+        video_url = TiktokService.get_video_url(url)
+        return RedirectResponse(url=video_url)
     return await download_tiktok_video_by_id(tiktok_id)
