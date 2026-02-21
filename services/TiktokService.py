@@ -3,6 +3,7 @@ import re
 import logging
 import requests
 from fastapi import HTTPException
+from urllib.parse import quote
 
 # Configure logging
 logging.basicConfig(
@@ -154,54 +155,194 @@ class TiktokService:
     def get_video_url(cls, tiktok_url: str) -> str:
         """
         Gets the direct video URL from a TikTok URL.
+        Tries multiple services in order if one fails.
         Returns the direct video URL without downloading.
-        Raises VideoNotFoundError or DownloadError on failure.
+        Raises VideoNotFoundError or DownloadError if all methods fail.
         """
         logger.info(f"[GET_URL] Getting video URL for: {tiktok_url}")
 
+        short_code = None
+        if "vm.tiktok.com" in tiktok_url:
+            # Try to extract short code from vm.tiktok.com URL
+            match = re.search(r"vm\.tiktok\.com/([A-Za-z0-9]+)", tiktok_url)
+            if match:
+                short_code = match.group(1)
+                logger.info(f"[GET_URL] Found short code: {short_code}")
+                
+                # Try tnktok first with short code
+                try:
+                    return cls._get_video_url_tnktok_short(short_code)
+                except Exception as e:
+                    logger.error(f"[GET_URL] TNKTOK with short code failed: {e}")
+
+        # Resolve redirect from vm.tiktok.com if needed
+        if "vm.tiktok.com" in tiktok_url:
+            try:
+                response = requests.get(
+                    tiktok_url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
+                    },
+                    allow_redirects=True,
+                    timeout=30,
+                )
+                final_url = response.url
+                logger.info(f"[GET_URL] Resolved redirect to: {final_url}")
+                tiktok_url = final_url
+            except Exception as e:
+                logger.error(f"[GET_URL] Error resolving redirect: {e}")
+
+        # Try services in order
+        last_error = None
+
+        # Method 1: TNKTOK (vt.tnktok.com) with full URL
+        try:
+            return cls._get_video_url_tnktok(tiktok_url)
+        except Exception as e:
+            logger.error(f"[GET_URL] TNKTOK failed: {e}")
+            last_error = e
+
+        # Method 2: Savetik
+        try:
+            return cls._get_video_url_savetik(tiktok_url)
+        except Exception as e:
+            logger.error(f"[GET_URL] Savetik failed: {e}")
+            last_error = e
+
+        # Method 3: SnapTik
+        try:
+            return cls._get_video_url_snaptik(tiktok_url)
+        except Exception as e:
+            logger.error(f"[GET_URL] SnapTik failed: {e}")
+            last_error = e
+
+        raise DownloadError(f"All methods failed. Last error: {last_error}")
+
+    @classmethod
+    def _get_video_url_savetik(cls, tiktok_url: str) -> str:
+        """Get video URL using Savetik API"""
+        params = {"url": tiktok_url}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": "https://savetik.net",
+            "Referer": "https://savetik.net/es",
+        }
+
+        response = requests.get(
+            cls.SAVETIK_API_URL, headers=headers, params=params, timeout=30
+        )
+        response.raise_for_status()
+
+        json_resp = response.json()
+        status_code = json_resp.get("status_code")
+        if status_code != 0:
+            raise VideoNotFoundError("Video not found")
+
+        download_url = (
+            json_resp.get("hdDownloadUrl")
+            or json_resp.get("downloadUrl")
+            or json_resp.get("video_link")
+        )
+        if not download_url:
+            raise DownloadError("No download URL in response")
+
+        logger.info(f"[GET_URL] Savetik returned: {download_url[:80]}...")
+        return download_url
+
+    @classmethod
+    def _get_video_url_snaptik(cls, tiktok_url: str) -> str:
+        """Get video URL using SnapTik API"""
+        params = {"url": tiktok_url}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+
+        response = requests.post(
+            cls.SNAPTT_API_URL, headers=headers, data=params, timeout=30
+        )
+        response.raise_for_status()
+
+        json_resp = response.json()
+        download_url = (
+            json_resp.get("video")
+            or json_resp.get("url")
+            or json_resp.get("download_url")
+        )
+
+        if not download_url:
+            # Try nested structure
+            data = json_resp.get("data", [{}])[0] if json_resp.get("data") else {}
+            download_url = data.get("video") or data.get("url")
+
+        if not download_url:
+            raise VideoNotFoundError("Video not found")
+
+        logger.info(f"[GET_URL] SnapTik returned: {download_url[:80]}...")
+        return download_url
+
+    @classmethod
+    def _get_video_url_tnktok(cls, tiktok_url: str) -> str:
+        """Get video URL using TNKTOK (vt.tnktok.com)"""
+        # Extract video ID from URL
         video_id = None
         url_match = re.search(r"tiktok\.com/(?:@[^/]+/)?(?:video|l)/(\d+)", tiktok_url)
         if url_match:
             video_id = url_match.group(1)
-            logger.info(f"[GET_URL] Extracted video_id: {video_id}")
-        else:
+        
+        if not video_id:
             raise DownloadError("Could not extract video ID from URL")
 
-        tnktok_url = f"{cls.TNKTOK_URL}/{video_id}"
-        logger.info(f"[GET_URL] Request URL: {tnktok_url}")
+        # Use @/video/{id} format
+        tnktok_url = f"{cls.TNKTOK_URL}/@/video/{video_id}"
 
-        try:
-            response = requests.get(
-                tnktok_url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7",
-                },
-                timeout=30,
-            )
-            logger.info(f"[GET_URL] Response status code: {response.status_code}")
-            response.raise_for_status()
-        except Exception as e:
-            logger.error(f"[GET_URL] Error contacting vt.tnktok.com: {str(e)}")
-            raise DownloadError("Error contacting vt.tnktok.com")
-
-        html_content = response.text
+        response = requests.get(
+            tnktok_url,
+            headers={
+                "User-Agent": "curl/8.5.0",
+                "Accept": "text/html",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
 
         og_video_match = re.search(
-            r'<meta\s+property="og:video"\s+content="([^"]+)"', html_content
+            r'<meta\s+property="og:video"\s+content="([^"]+)"', response.text
         )
         if not og_video_match:
-            logger.error("[GET_URL] Could not find og:video metatag in HTML")
             raise VideoNotFoundError("Video not found")
 
         download_url = og_video_match.group(1)
-        logger.info(f"[GET_URL] Extracted video URL: {download_url}")
+        logger.info(f"[GET_URL] TNKTOK returned: {download_url[:80]}...")
+        return download_url
 
-        if not download_url:
-            logger.error("[GET_URL] No download URL found in metatag")
-            raise DownloadError("No download URL available")
+    @classmethod
+    def _get_video_url_tnktok_short(cls, short_code: str) -> str:
+        """Get video URL using TNKTOK with short code (vt.tnktok.com/shortcode)"""
+        tnktok_url = f"{cls.TNKTOK_URL}/{short_code}"
 
+        response = requests.get(
+            tnktok_url,
+            headers={
+                "User-Agent": "curl/8.5.0",
+                "Accept": "text/html",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+
+        og_video_match = re.search(
+            r'<meta\s+property="og:video"\s+content="([^"]+)"', response.text
+        )
+        if not og_video_match:
+            raise VideoNotFoundError("Video not found")
+
+        download_url = og_video_match.group(1)
+        logger.info(f"[GET_URL] TNKTOK short returned: {download_url[:80]}...")
         return download_url
 
     @classmethod
