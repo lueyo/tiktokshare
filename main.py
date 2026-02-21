@@ -11,6 +11,7 @@ from services.InstagramService import InstagramService
 from services.FacebookService import FacebookService
 from services.TiktokService import TiktokService
 from services.ThreadsService import ThreadsService
+from services.XService import XService
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -310,9 +311,21 @@ async def download_x_video(x_id: str):
             if not os.path.exists(filename):
                 raise HTTPException(status_code=500, detail="Video download failed")
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error downloading video: {str(e)}"
-        )
+        # Fallback to XService (fxtwitter) if yt-dlp fails
+        try:
+            filename = os.path.join(VIDEO_DIR_X, f"{x_id}.mp4")
+            print(f"Trying XService fallback with x_id: {x_id}")
+            XService.download_video_with_fxtwitter(x_id, filename)
+
+            if not os.path.exists(filename):
+                raise HTTPException(
+                    status_code=500, detail="Video download failed in fallback"
+                )
+        except Exception as fallback_e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error downloading video: {str(e)}; Fallback error: {str(fallback_e)}",
+            )
 
     return FileResponse(filename, media_type="video/mp4")
 
@@ -327,7 +340,7 @@ async def download_facebook_video_by_id(facebook_id: str):
     # Check if facebook_id matches the pattern like 1AZfMP4wBz (length and character types)
     original_facebook_id = facebook_id
     is_share_type = bool(re.fullmatch(r"[A-Za-z0-9]{10}", facebook_id))
-    
+
     if is_share_type:
         print(f"Detected short Facebook ID: {facebook_id}")
         # Make a request to get the 302 redirect location header
@@ -402,7 +415,9 @@ async def download_facebook_video_by_id(facebook_id: str):
         try:
             filename = os.path.join(VIDEO_DIR_F, f"{facebook_id}.mp4")
             if is_share_type:
-                FacebookService.download_video_from_fixacebook(original_facebook_id, filename)
+                FacebookService.download_video_from_fixacebook(
+                    original_facebook_id, filename
+                )
             else:
                 FacebookService.download_video_with_requests(url, filename)
         except Exception as fallback_e:
