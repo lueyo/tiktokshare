@@ -104,8 +104,12 @@ class TiktokService:
             logger.error(f"[SAVETIK] API error: {error_detail}")
             raise VideoNotFoundError("Video not found")
 
-        # Extract download URL - prefer hdDownloadUrl, fall back to downloadUrl
-        download_url = json_resp.get("hdDownloadUrl") or json_resp.get("downloadUrl")
+        # Extract download URL - prefer downloadUrl (rapidcdn direct link), fall back to hdDownloadUrl, then video_link
+        download_url = (
+            json_resp.get("downloadUrl")
+            or json_resp.get("hdDownloadUrl")
+            or json_resp.get("video_link")
+        )
         logger.info(f"[SAVETIK] Extracted download_url: {download_url}")
         if not download_url:
             logger.error("[SAVETIK] No download URL found in response")
@@ -242,8 +246,8 @@ class TiktokService:
             raise VideoNotFoundError("Video not found")
 
         download_url = (
-            json_resp.get("hdDownloadUrl")
-            or json_resp.get("downloadUrl")
+            json_resp.get("downloadUrl")
+            or json_resp.get("hdDownloadUrl")
             or json_resp.get("video_link")
         )
         if not download_url:
