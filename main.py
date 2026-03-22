@@ -13,6 +13,7 @@ from services.FacebookService import FacebookService
 from services.TiktokService import TiktokService
 from services.ThreadsService import ThreadsService
 from services.XService import XService
+from services.YoutubeService import YoutubeService
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -30,12 +31,14 @@ VIDEO_DIR_X = os.path.join(VIDEO_DIR, "x")
 VIDEO_DIR_I = os.path.join(VIDEO_DIR, "i")
 VIDEO_DIR_F = os.path.join(VIDEO_DIR, "f")
 VIDEO_DIR_H = os.path.join(VIDEO_DIR, "h")
+VIDEO_DIR_Y = os.path.join(VIDEO_DIR, "y")
 os.makedirs(VIDEO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR_T, exist_ok=True)
 os.makedirs(VIDEO_DIR_X, exist_ok=True)
 os.makedirs(VIDEO_DIR_I, exist_ok=True)
 os.makedirs(VIDEO_DIR_F, exist_ok=True)
 os.makedirs(VIDEO_DIR_H, exist_ok=True)
+os.makedirs(VIDEO_DIR_Y, exist_ok=True)
 
 
 async def delete_old_videos():
@@ -48,6 +51,7 @@ async def delete_old_videos():
             VIDEO_DIR_I,
             VIDEO_DIR_F,
             VIDEO_DIR_H,
+            VIDEO_DIR_Y,
         ]:
             for filename in os.listdir(directory):
                 filepath = os.path.join(directory, filename)
@@ -558,6 +562,36 @@ async def download_facebook_video(facebook_id: str, r: Optional[str] = None):
         video_url = FacebookService.get_video_url(url, is_share_type, original_facebook_id if is_share_type else None)
         return RedirectResponse(url=video_url)
     return await download_facebook_video_by_id(facebook_id)
+
+
+@app.get("/y/{video_id}")
+async def download_youtube_video(video_id: str, r: Optional[str] = None):
+    if r is not None:
+        stream_url = await YoutubeService.get_stream_url(video_id)
+        return RedirectResponse(url=stream_url)
+
+    duration = await YoutubeService.get_duration(video_id)
+    if duration > YoutubeService.DURATION_THRESHOLD_SECONDS:
+        stream_url = await YoutubeService.get_stream_url(video_id)
+        return RedirectResponse(url=stream_url)
+
+    filename = os.path.join(VIDEO_DIR_Y, f"{video_id}.mp4")
+    if os.path.exists(filename):
+        return FileResponse(filename, media_type="video/mp4")
+
+    try:
+        await YoutubeService.download_video(video_id, filename)
+    except Exception as e:
+        if os.path.exists(filename):
+            os.remove(filename)
+        raise HTTPException(
+            status_code=500, detail=f"Error downloading YouTube video: {str(e)}"
+        )
+
+    if not os.path.exists(filename):
+        raise HTTPException(status_code=500, detail="Video download failed")
+
+    return FileResponse(filename, media_type="video/mp4")
 
 
 @app.get("/{tiktok_id:path}")
