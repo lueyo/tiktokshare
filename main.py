@@ -566,6 +566,7 @@ async def download_facebook_video(facebook_id: str, r: Optional[str] = None):
 
 @app.get("/y/{video_id}")
 async def download_youtube_video(video_id: str, r: Optional[str] = None):
+    return {"detail": "youtube no disponible"}
     if r is not None:
         stream_url = await YoutubeService.get_stream_url(video_id)
         return RedirectResponse(url=stream_url)
