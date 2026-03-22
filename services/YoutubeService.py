@@ -19,6 +19,9 @@ class YoutubeService:
         "https://inv.nadeko.net",
         "https://yewtu.be",
         "https://invidious.nerdvpn.de",
+        "https://iv.nbojb.com",
+        "https://iv.didthis.net",
+        "https://iv.1d4.us",
     ]
     DURATION_THRESHOLD_SECONDS = 480
     HEADERS = {
@@ -50,8 +53,12 @@ class YoutubeService:
         if not all_formats:
             raise DownloadError("No format streams available")
 
-        best = all_formats[0]
-        return best.get("url") or ""
+        for fmt in all_formats:
+            url = fmt.get("url", "")
+            if url and not url.startswith("https://i.ytimg.com/sb/"):
+                return url
+
+        return all_formats[0].get("url") or ""
 
     @classmethod
     async def _get_video_info_yt_dlp(cls, video_id: str) -> Dict[str, Any]:
@@ -66,12 +73,19 @@ class YoutubeService:
             "no_warnings": True,
             "skip_download": True,
             "geo_bypass": True,
+            "nocheckcertificate": True,
+            "prefer_insecure": True,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
 
     @classmethod
     async def get_video_info(cls, video_id: str) -> Dict[str, Any]:
+        try:
+            return await cls._get_video_info_yt_dlp(video_id)
+        except Exception:
+            pass
+
         for instance in cls.INVIDIOUS_INSTANCES:
             try:
                 data = cls._get_video_info_invidious(instance, video_id)
@@ -80,18 +94,61 @@ class YoutubeService:
             except Exception:
                 pass
 
-        try:
-            return await cls._get_video_info_yt_dlp(video_id)
-        except Exception as e:
-            raise DownloadError(f"All methods failed: {e}")
+        raise DownloadError("All methods failed")
 
     @classmethod
     async def get_duration(cls, video_id: str) -> int:
         info = await cls.get_video_info(video_id)
-        return int(info.get("lengthSeconds", 0))
+        length = info.get("lengthSeconds")
+        if length is not None:
+            return int(length)
+
+        duration = info.get("duration")
+        if duration:
+            return int(duration)
+
+        return 0
+
+    @classmethod
+    def _get_stream_url_yt_dlp(cls, video_id: str) -> str:
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "geo_bypass": True,
+            "nocheckcertificate": True,
+            "prefer_insecure": True,
+            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if not info:
+                raise DownloadError("No info returned from yt-dlp")
+
+            direct_url = info.get("url") or ""
+            if direct_url and not direct_url.startswith("https://i.ytimg.com/sb/"):
+                return direct_url
+
+            formats = info.get("formats") or []
+            for fmt in formats:
+                fmt_url = fmt.get("url") or ""
+                if fmt_url and not fmt_url.startswith("https://i.ytimg.com/sb/"):
+                    return fmt_url
+
+            if direct_url:
+                return direct_url
+
+            raise DownloadError("No valid stream URL from yt-dlp")
 
     @classmethod
     async def get_stream_url(cls, video_id: str) -> str:
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, cls._get_stream_url_yt_dlp, video_id)
+        except Exception:
+            pass
+
         for instance in cls.INVIDIOUS_INSTANCES:
             try:
                 url = cls._get_stream_url_from_invidious(instance, video_id)
@@ -100,38 +157,27 @@ class YoutubeService:
             except Exception:
                 pass
 
-        loop = asyncio.get_event_loop()
-        try:
-            info = await loop.run_in_executor(
-                None, cls._extract_yt_dlp_info, f"https://www.youtube.com/watch?v={video_id}"
-            )
-            formats = info.get("formats") or []
-            if formats:
-                best = formats[0]
-                return best.get("url") or ""
-        except Exception:
-            pass
-
         raise DownloadError("Could not get stream URL from any service")
 
     @classmethod
     async def download_video(cls, video_id: str, save_path: str) -> str:
+        loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(None, cls._download_yt_dlp, video_id, save_path)
+            if os.path.exists(save_path) and os.path.getsize(save_path) > 10240:
+                return save_path
+        except Exception:
+            pass
+
         for instance in cls.INVIDIOUS_INSTANCES:
             try:
                 stream_url = cls._get_stream_url_from_invidious(instance, video_id)
-                if stream_url:
+                if stream_url and not stream_url.startswith("https://i.ytimg.com/sb/"):
                     cls._download_file(stream_url, save_path)
                     if os.path.exists(save_path) and os.path.getsize(save_path) > 10240:
                         return save_path
             except Exception:
                 pass
-
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None, cls._download_yt_dlp, video_id, save_path
-        )
-        if os.path.exists(save_path) and os.path.getsize(save_path) > 10240:
-            return save_path
 
         raise DownloadError("Download failed with all methods")
 
@@ -155,6 +201,8 @@ class YoutubeService:
             "quiet": True,
             "no_warnings": True,
             "geo_bypass": True,
+            "nocheckcertificate": True,
+            "prefer_insecure": True,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.extract_info(url, download=True)
