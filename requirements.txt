@@ -42,5 +42,5 @@ uvicorn==0.35.0
 uvloop==0.21.0
 watchfiles==1.1.0
 websockets==15.0.1
-yt-dlp==2026.1.6.233142.dev0
+yt-dlp==2026.5.16.233954.dev0
 yt-dlp-ejs==0.3.2
